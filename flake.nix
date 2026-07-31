@@ -1,11 +1,9 @@
 {
-  description = "Mobile NixOS port for the Xiaomi Redmi 9A (dandelion, MT6765)";
+  description = "Mobile NixOS ports for phones and tablets";
 
-  # Mobile NixOS is not a flake. It is consumed as a plain source tree and given
-  # its own `system`, which makes it use the Nixpkgs it pins itself under
-  # `npins/`. That is deliberate: this port was validated against exactly that
-  # Nixpkgs, and adding a second, independent `nixpkgs` input here would let the
-  # two drift apart silently.
+  # Mobile NixOS is not a flake. Consumed as a source tree and given its own
+  # `system`, it uses the Nixpkgs it pins under npins/, which is the one every
+  # device here was validated against.
   inputs.mobile-nixos = {
     url = "github:mobile-nixos/mobile-nixos/2c132754323fc1915e8d21dcfc0ef68ab084c6fb";
     flake = false;
@@ -14,7 +12,10 @@
   outputs =
     { self, mobile-nixos }:
     let
-      # Hosts that can produce an aarch64 image. x86_64 cross-compiles.
+      devices = {
+        xiaomi-dandelion = ./devices/xiaomi-dandelion;
+      };
+
       buildSystems = [
         "x86_64-linux"
         "aarch64-linux"
@@ -29,53 +30,48 @@
           }) buildSystems
         );
 
-      # Mobile NixOS' own entry point to its pinned Nixpkgs. Used here only to
-      # get `applyPatches`; the eval below builds its own package set.
       pkgsFor = system: import "${mobile-nixos}/pkgs.nix" { inherit system; };
 
-      # Android boot header v2 is not expressible in upstream Mobile NixOS, and
-      # dandelion's bootloader will not accept a v0 or v1 image. Patching the
-      # source tree is the honest way to say so: the patch is reviewable, and it
-      # cannot silently stop applying the way an overlay can silently no-op.
+      # Android boot header v2 is not expressible upstream, and dandelion's
+      # bootloader rejects v0 and v1. A patch fails loudly; an overlay would
+      # silently no-op.
       mobileNixosFor =
         system:
         (pkgsFor system).applyPatches {
-          name = "mobile-nixos-dandelion";
+          name = "mobile-nixos-patched";
           src = mobile-nixos;
           patches = [ ./patches/mobile-nixos/0001-android-bootimg-header-v2.patch ];
         };
 
-      # `configuration` is whatever you would otherwise put in `local.nix`.
-      # Passing `system` explicitly matters: Mobile NixOS falls back to
+      # `system` must be explicit: Mobile NixOS otherwise falls back to
       # `builtins.currentSystem`, which pure flake evaluation forbids.
       evalFor =
-        system: configuration:
+        system: device: configuration:
         import (mobileNixosFor system) {
           inherit system configuration;
-          device = ./devices/xiaomi-dandelion;
+          device = devices.${device};
+        };
+
+      outputsFor =
+        system: device:
+        let
+          eval = evalFor system device { };
+        in
+        {
+          "${device}-boot-img" = eval.outputs.android.android-bootimg;
+          "${device}-recovery-img" = eval.outputs.android.android-recovery;
+          "${device}-fastboot-images" = eval.outputs.android.android-fastboot-images;
+          "${device}-kernel" = eval.config.mobile.boot.stage-1.kernel.package;
         };
     in
     {
-      # Escape hatch for consumers that want their own configuration on top:
-      #   (dandelion.lib.evalFor "x86_64-linux" ./my-config.nix).outputs
-      lib = { inherit evalFor; };
+      lib = { inherit devices evalFor; };
 
       packages = forEachSystem (
         system:
-        let
-          eval = evalFor system { };
-        in
-        {
-          # The image that has actually been booted on hardware. It is flashed
-          # to `recovery`, not `boot`; see README.
-          default = eval.outputs.android.android-bootimg;
-          boot-img = eval.outputs.android.android-bootimg;
-
-          android-recovery = eval.outputs.android.android-recovery;
-          fastboot-images = eval.outputs.android.android-fastboot-images;
-
-          kernel = eval.config.mobile.boot.stage-1.kernel.package;
-        }
+        builtins.foldl' (acc: device: acc // outputsFor system device) { } (
+          builtins.attrNames devices
+        )
       );
 
       devShells = forEachSystem (

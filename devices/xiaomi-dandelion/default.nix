@@ -1,24 +1,18 @@
 # Xiaomi Redmi 9A (dandelion), M2006C3LG, MT6762G.
 #
-# Evaluate out of tree:
-#   nix-instantiate mobile-nixos \
-#     --arg device ./port/devices/xiaomi-dandelion \
-#     -A outputs.android.android-bootimg
-#
-# Nothing here has been booted on hardware. The geometry below started from
-# Droidian's debian-dandelion/kernel-info.mk and has since been checked against
-# the stock boot.img from V12.0.22.0.QCDMIXM; see
-# research/device/stock-image-analysis.md. Two things changed as a result:
+# The boot image geometry below started from Droidian's
+# debian-dandelion/kernel-info.mk and was then checked against the stock
+# boot.img from V12.0.22.0.QCDMIXM. Two things changed as a result:
 # offset_second and the dtb section format, both annotated below.
 { config, lib, pkgs, ... }:
 
 {
   imports = [
-    ../../modules/hardware-mediatek-mt6765.nix
+    ../../modules/soc/mt6765.nix
     ../../modules/systemd-linux-4.9.nix
     ../../modules/stage2-build-fixes.nix
-    ../../modules/display-mtk-fbdev.nix
     ../../modules/stage-1-ssh.nix
+    ./display.nix
   ];
 
   mobile.device.name = "xiaomi-dandelion";

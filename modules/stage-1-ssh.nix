@@ -1,40 +1,25 @@
-# Key-authenticated SSH over the USB gadget during stage-1.
+# Key-authenticated root SSH over the USB gadget during stage-1.
 #
-# This deliberately does not use `mobile.boot.stage-1.ssh.enable`. That option
-# (mobile-nixos/modules/initrd-ssh.nix) runs `passwd -d root` and starts
-# dropbear with `-B`, which is documented upstream as
-# "OPENS ACCESS TO ALL WITHOUT A PASSWORD NOR SSH KEY". Anyone on the USB bus
-# gets root. What is wanted here is one named key, so the daemon is configured
-# directly instead.
+# Deliberately not `mobile.boot.stage-1.ssh.enable`: that option runs
+# `passwd -d root` and starts dropbear with `-B`, which upstream documents as
+# "OPENS ACCESS TO ALL WITHOUT A PASSWORD NOR SSH KEY".
 #
-# Transport is RNDIS, not ECM: the running kernel has CONFIG_USB_F_RNDIS=y and
-# CONFIG_USB_CONFIGFS_RNDIS=y, while CONFIG_USB_CONFIGFS_ECM and _NCM are unset
-# (read from /proc/config.gz on the device). `rndis = "rndis.usb0"` is already
-# declared in ../devices/xiaomi-dandelion/default.nix, and enabling networking
-# below is what finally appends "rndis" to the gadget's function list
-# (modules/initrd-usb.nix:104). It composes with "adb" in the same config, so
-# adb stays up alongside it.
-#
-# The stage-1 /etc/passwd already reads `root:*:0:0:root:/root:/bin/sh` and
-# /root is 0700 root-owned, so pubkey auth needs no account setup: the password
-# field is locked and `-s` refuses password auth outright.
+# The device needs a USB network function declared for this to be reachable.
+# `mobile.usb.gadgetfs.functions` composes, so adb stays up alongside it.
 { pkgs, ... }:
 
 let
   authorizedKeys = import ../authorized-keys.nix;
 
-  authorizedKeysFile = pkgs.writeText "dandelion-authorized-keys" (
+  authorizedKeysFile = pkgs.writeText "authorized-keys" (
     builtins.concatStringsSep "\n" authorizedKeys + "\n"
   );
 in
 {
-  # Adds "rndis" to the gadget and installs the udhcpd task that addresses the
-  # interface (172.16.42.1) and leases 172.16.42.2 to the host.
   mobile.boot.stage-1.networking.enable = true;
 
-  # libnss_files is not optional: dropbear resolves the account through NSS, and
-  # the initrd's glibc has no compiled-in files backend. Mirrors what
-  # modules/adb.nix does for adbd.
+  # dropbear resolves the account through NSS, and the initrd's glibc has no
+  # compiled-in files backend.
   mobile.boot.stage-1.extraUtils = [
     {
       package = pkgs.dropbear;

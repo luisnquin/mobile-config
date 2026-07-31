@@ -1,8 +1,8 @@
 # Downstream MediaTek 4.9.190 kernel for Xiaomi Redmi 9A (dandelion).
 #
 # Source: Droidian's fork of Xiaomi's `dandelion-q-oss` drop. See "Toolchain
-# deviation" in ../../../README.md for why the compiler is GCC 13 rather than
-# the AOSP clang 6.0 Droidian uses, and what that deviation does not prove.
+# deviation" in ../README.md for why the compiler is GCC 13 rather than the
+# AOSP clang 6.0 Droidian uses, and what that deviation does not prove.
 #
 # The trailing `...` is load-bearing. `boot.kernelPackages`' apply function
 # (nixos/modules/system/boot/kernel.nix:76-81) does
@@ -67,12 +67,7 @@
   # authoritative.
   configfile = ./config.aarch64;
 
-  # Pinned by revision, not by branch. `halium-10.0` moves; this port was
-  # developed and boot-tested against exactly this tree.
-  #
-  # The tarball GitHub serves for this revision was diffed against a local
-  # `git clone` of the same revision and is identical: the repository's
-  # .gitattributes sets only `diff=cpp`, so nothing is `export-ignore`d.
+  # Pinned by revision, not by branch: `halium-10.0` moves.
   src = fetchFromGitHub {
     name = "kernel-droidian-mt6765";
     owner = "droidian-mt6765";
@@ -86,7 +81,7 @@
   # bare `earlycon` could resolve a device. It was the reason this port did not
   # boot, and it is deleted rather than disabled; see boot.kernelParams in
   # ../default.nix for the bisect that established it.
-  patches = [ ../../../patches/kernel/0006-mtkfb-implement-fb_setcolreg.patch ];
+  patches = [ ../../../patches/linux/mt6765/0006-mtkfb-implement-fb_setcolreg.patch ];
 
   # A 2024 compiler emits diagnostics this tree predates (-Warray-compare,
   # -Wbuiltin-declaration-mismatch, ...). A blanket -Wno-error does not cancel
