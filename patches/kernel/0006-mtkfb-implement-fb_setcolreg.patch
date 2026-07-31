@@ -1,0 +1,97 @@
+From: dandelion port <none@localhost>
+Subject: [PATCH] mtkfb: implement fb_setcolreg so fbcon has a palette
+
+mtkfb declares 32bpp as FB_VISUAL_TRUECOLOR (mtkfb.c:694) and hands the
+framebuffer layer a private palette:
+
+    drivers/misc/mediatek/video/include/mtkfb.h:388
+        u32 pseudo_palette[17];
+    drivers/misc/mediatek/video/mt6765/videox/mtkfb.c:1975
+        info->pseudo_palette = fbdev->pseudo_palette;
+
+but mtkfb_ops provides neither .fb_setcolreg nor .fb_setcmap, and nothing
+else in the driver ever writes that array. fb_set_cmap() bails out early
+in that case:
+
+    drivers/video/fbdev/core/fbcmap.c
+        if (start < 0 || (!info->fbops->fb_setcolreg &&
+                          !info->fbops->fb_setcmap))
+                return -EINVAL;
+
+so fbcon_set_palette() is a no-op and the palette stays as
+framebuffer_alloc() left it: all zeroes. The generic drawing helpers index
+it directly --
+
+    drivers/video/fbdev/core/cfbimgblt.c:290
+        fgcolor = ((u32 *)(p->pseudo_palette))[image->fg_color];
+    drivers/video/fbdev/core/cfbimgblt.c:291
+        bgcolor = ((u32 *)(p->pseudo_palette))[image->bg_color];
+    drivers/video/fbdev/core/cfbfillrect.c:292
+        fg = ((u32 *)(p->pseudo_palette))[rect->color];
+
+-- so every console colour resolves to 0x00000000. fbcon runs correctly
+and draws nothing visible: erases paint black, and glyphs are blitted
+black-on-black.
+
+Observed on Xiaomi dandelion (MT6765, 720x1600 32bpp). After fbcon took
+the console over, writing to /dev/tty1 measurably cleared 64112 of 65536
+sampled pixels to black, while a full-page scan of /dev/fb0 found zero
+rows containing a non-black pixel.
+
+The layer format is ARGB8888/BGRA8888 (mtkfb.c:884), so the alpha channel
+is set opaque rather than left at zero. var.transp is 8 bits at offset 24
+for 32bpp (mtkfb.c:1005, mtkfb.c:1995).
+
+Only the first 16 entries are written; that is what fbcon uses, and the
+array holds 17.
+
+---
+ drivers/misc/mediatek/video/mt6765/videox/mtkfb.c | 28 ++++++++++++++++++++++
+ 1 file changed, 28 insertions(+)
+
+diff --git a/drivers/misc/mediatek/video/mt6765/videox/mtkfb.c b/drivers/misc/mediatek/video/mt6765/videox/mtkfb.c
+--- a/drivers/misc/mediatek/video/mt6765/videox/mtkfb.c
++++ b/drivers/misc/mediatek/video/mt6765/videox/mtkfb.c
+@@ -1889,7 +1889,34 @@
+ #endif
+ 	return mtkfb_pan_display_impl(var, info);
+ }
+
++static int mtkfb_setcolreg(unsigned int regno, unsigned int red,
++	unsigned int green, unsigned int blue, unsigned int transp,
++	struct fb_info *info)
++{
++	u32 *palette = info->pseudo_palette;
++	u32 value;
++
++	if (info->fix.visual != FB_VISUAL_TRUECOLOR)
++		return -EINVAL;
++
++	if (regno >= 16)
++		return -EINVAL;
++
++	value = (red >> (16 - info->var.red.length)) << info->var.red.offset;
++	value |= (green >> (16 - info->var.green.length)) <<
++		info->var.green.offset;
++	value |= (blue >> (16 - info->var.blue.length)) << info->var.blue.offset;
++
++	if (info->var.transp.length)
++		value |= ((1 << info->var.transp.length) - 1) <<
++			info->var.transp.offset;
++
++	palette[regno] = value;
++
++	return 0;
++}
++
+ /* Callback table for the frame buffer framework. Some of these pointers
+  * will be changed according to the current setting of fb_info->accel_flags.
+  */
+@@ -1897,6 +1924,7 @@
+ 	.owner = THIS_MODULE,
+ 	.fb_open = mtkfb_open,
+ 	.fb_release = mtkfb_release,
++	.fb_setcolreg = mtkfb_setcolreg,
+ 	.fb_pan_display = mtkfb_pan_display_proxy,
+ 	.fb_fillrect = cfb_fillrect,
+ 	.fb_copyarea = cfb_copyarea,

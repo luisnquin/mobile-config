@@ -1,0 +1,57 @@
+sd-event: block SIGCHLD when a child is watched without a pidfd
+
+Completes 0003. That patch restores the SIGCHLD path for kernels without
+pidfd_open(), but the path is only half-connected: nothing blocks SIGCHLD, and
+a signalfd receives nothing while its signal is unblocked.
+
+verify_sigchld() demands a blocked SIGCHLD only for WSTOPPED/WCONTINUED. For a
+plain WEXITED watch it does not, because upstream expects such a watch to run
+off a pidfd and never involve the signal at all. Callers written against that
+contract -- systemd-udevd among them -- leave SIGCHLD unblocked. Read from the
+running device, attempt 16:
+
+    /proc/351/status   SigBlk: 0008000000004003    (SIGHUP, SIGINT, SIGALRM,
+                       SigIgn: 0000000180000000     SIGTERM, RT52 -- no SIGCHLD)
+                       SigCgt: 0000000000000000
+
+So worker exits were delivered as an unblocked, uncaught SIGCHLD, whose default
+action is to be discarded. The event loop never learned, and the effect was
+subtle rather than total: sd_event_add_child() sets need_process_child = true
+itself, so every *new* worker caused process_child() to sweep and reap whichever
+earlier workers had since exited. Reaping therefore tracked worker creation, and
+the final batch was never reaped at all.
+
+Measured, attempt 16 (patches 0002-0004, udev otherwise working):
+
+  - 1061 devices in /run/udev/data and 326 in /run/udev/links, so events were
+    genuinely processed;
+  - 14 zombie (udev-worker) processes parented to udevd, permanent;
+  - /run/udev/queue never removed, so `udevadm settle` timed out at 10 s
+    despite there being no real work left.
+
+Blocking SIGCHLD is what sd_event_add_child()'s callers were historically
+required to do, and it is inherited across fork(). udev workers use waitid() on
+the programs they spawn, which is unaffected by the mask.
+
+--- a/src/libsystemd/sd-event/sd-event.c
++++ b/src/libsystemd/sd-event/sd-event.c
+@@ -1690,6 +1690,19 @@
+ 
+         } else {
+                 /* We shall wait for some other event than WEXITED */
++
++                if (s->child.pidfd < 0) {
++                        /* verify_sigchld() only demands a blocked SIGCHLD for WSTOPPED/WCONTINUED,
++                         * because a WEXITED watch is expected to run off a pidfd and never touch the
++                         * signal at all. Without a pidfd it does: the exit reaches this event loop only
++                         * through the signalfd, and a signalfd sees nothing while the signal is
++                         * unblocked. Callers written against pidfd semantics -- systemd-udevd among them
++                         * -- therefore leave SIGCHLD unblocked, so block it here. */
++                        r = sigprocmask_many(SIG_BLOCK, NULL, SIGCHLD);
++                        if (r < 0)
++                                return r;
++                }
++
+                 r = event_make_signal_data(e, SIGCHLD, NULL);
+                 if (r < 0)
+                         return r;

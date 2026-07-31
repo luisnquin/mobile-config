@@ -1,0 +1,75 @@
+diff --git a/modules/system-types/android/bootimg.nix b/modules/system-types/android/bootimg.nix
+index 18408db..8b04966 100644
+--- a/modules/system-types/android/bootimg.nix
++++ b/modules/system-types/android/bootimg.nix
+@@ -37,6 +37,8 @@ pkgs.runCommand name {
+   mkbootimg \
+     --kernel  $kernel \
+     ${optionalString (bootimg.dt != null) "--dt ${bootimg.dt}"} \
++    ${optionalString (bootimg.header_version != "0") "--header_version ${bootimg.header_version}"} \
++    ${optionalString (bootimg.dtb != null) "--dtb ${bootimg.dtb} --dtb_offset ${bootimg.offset_dtb}"} \
+     --ramdisk ${initrd} \
+     --cmdline       "${cmdline}" \
+     --base           ${bootimg.flash.offset_base   } \
+diff --git a/modules/system-types/android/default.nix b/modules/system-types/android/default.nix
+index 5c5639a..1cfb93c 100644
+--- a/modules/system-types/android/default.nix
++++ b/modules/system-types/android/default.nix
+@@ -154,6 +154,37 @@ in
+           internal = true;
+         };
+ 
++        header_version = lib.mkOption {
++          type = types.str;
++          default = "0";
++          description = ''
++            Android boot image header version.
++
++            Devices launched with Android 10 generally require "2", which adds a
++            dedicated DTB area to the image. Keep "0" for legacy images.
++          '';
++          internal = true;
++        };
++
++        dtb = lib.mkOption {
++          type = types.nullOr types.path;
++          default = null;
++          description = ''
++            Path to a flattened device tree to pass as --dtb to mkbootimg.
++
++            This is the header version 2 DTB area, and is distinct from the
++            legacy `dt` (--dt) QCDT area and from appended DTBs.
++          '';
++          internal = true;
++        };
++
++        offset_dtb = lib.mkOption {
++          type = types.str;
++          default = "0x00000000";
++          description = "Load offset of the header version 2 DTB area.";
++          internal = true;
++        };
++
+         flash = lib.attrsets.genAttrs [
+           "offset_base"
+           "offset_kernel"
+@@ -231,6 +262,19 @@ in
+               Tip: enabling `isQcdt` or `isExynosDT` on your kernel is not needed qhen using `appendDTB`.
+           '';
+         }
++        {
++          assertion = config.mobile.system.android.bootimg.dtb == null || config.mobile.system.android.bootimg.dt == null;
++          message = ''
++            Device configuration erroneous: header version 2 `bootimg.dtb` and legacy `bootimg.dt` are both set.
++              The legacy QCDT `--dt` area and the header version 2 `--dtb` area are different image regions.
++          '';
++        }
++        {
++          assertion = config.mobile.system.android.bootimg.dtb == null || config.mobile.system.android.bootimg.header_version != "0";
++          message = ''
++            Device configuration erroneous: `bootimg.dtb` requires `bootimg.header_version` of "1" or greater.
++          '';
++        }
+       ];
+     })
+ 

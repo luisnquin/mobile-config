@@ -1,0 +1,109 @@
+sd-device: do not write a synthetic uevent uuid on pre-4.13 kernels
+
+sd_device_trigger_with_uuid() unconditionally writes "<action> <uuid>" to a
+device's `uevent` sysfs attribute. Parsing that form requires
+kobject_synth_uevent(), which landed in Linux 4.13. This device runs 4.9.190,
+whose uevent_store() is:
+
+    static ssize_t uevent_store(struct device *dev, struct device_attribute *attr,
+                                const char *buf, size_t count)
+    {
+            enum kobject_action action;
+
+            if (kobject_action_type(buf, count, &action) == 0)
+                    kobject_uevent(&dev->kobj, action);
+            else
+                    dev_err(dev, "uevent: unknown action-string\n");
+            return count;
+    }
+
+    sources/kernel-droidian-mt6765/drivers/base/core.c:414-424
+
+The whole buffer is taken as an action name, "add <uuid>" does not match, the
+event is dropped -- and the write still returns `count`, so nothing upstream
+can detect the failure. An errno-based fallback is therefore impossible; the
+check has to be on the kernel version.
+
+Measured on-device, stage-1 attempt 15 (patches 0002 and 0003 applied, udev
+running and settling correctly):
+
+  - `udevadm trigger --action=add --subsystem-match=block` returns 0,
+    `udevadm settle` returns 0 immediately, and no block device is ever
+    processed: no /run/udev/data entries, no /dev/disk/*.
+  - `echo add > /sys/class/block/mmcblk0p41/uevent` is processed instantly and
+    creates /dev/disk/{by-id,by-partlabel,by-partuuid,by-uuid}.
+  - `udevadm monitor` shows KERNEL and UDEV delivery for the raw write only.
+  - dmesg carries 1141 x "uevent: unknown action-string".
+
+Below 4.13 the bare action is written instead. The event fires; it just cannot
+be correlated back by uuid, so `udevadm trigger --settle` degrades there.
+Mobile NixOS's stage-1 calls `udevadm trigger --action=add` and a separate
+`udevadm settle`, which synchronises through /run/udev/queue, so the path this
+port depends on is unaffected. The caller still receives a valid random uuid
+and a success return, so no consumer sees a new error class.
+
+--- a/src/libsystemd/sd-device/sd-device.c
++++ b/src/libsystemd/sd-device/sd-device.c
+@@ -1,6 +1,7 @@
+ /* SPDX-License-Identifier: LGPL-2.1-or-later */
+ 
+ #include <linux/magic.h>
++#include <sys/utsname.h>
+ #include <unistd.h>
+ 
+ #include "sd-device.h"
+@@ -2810,6 +2811,42 @@
+         return sd_device_trigger_with_uuid(device, action, NULL);
+ }
+ 
++static bool kernel_has_synthetic_uevent_uuid(void) {
++        static int cached = -1;
++        unsigned major = 0, minor = 0;
++        struct utsname un;
++        const char *e;
++
++        /* Writing "<action> <uuid>" to a uevent attribute reaches kobject_synth_uevent(), which is
++         * Linux 4.13. Older kernels parse the whole buffer as an action name, fail, and log
++         * "uevent: unknown action-string" -- but uevent_store() still returns the write count, so the
++         * event is dropped silently and this cannot be detected from the return value. Hence the
++         * version check. */
++
++        if (cached >= 0)
++                return cached;
++
++        /* Assume the modern behaviour whenever the release cannot be parsed. */
++        cached = true;
++
++        if (uname(&un) < 0)
++                return cached;
++
++        e = un.release;
++        if (!ascii_isdigit(*e))
++                return cached;
++        for (; ascii_isdigit(*e); e++)
++                major = major * 10 + (*e - '0');
++
++        if (*e != '.' || !ascii_isdigit(e[1]))
++                return cached;
++        for (e++; ascii_isdigit(*e); e++)
++                minor = minor * 10 + (*e - '0');
++
++        cached = major > 4 || (major == 4 && minor >= 13);
++        return cached;
++}
++
+ _public_ int sd_device_trigger_with_uuid(
+                 sd_device *device,
+                 sd_device_action_t action,
+@@ -2829,7 +2866,10 @@
+         if (r < 0)
+                 return r;
+ 
+-        j = strjoina(s, " ", SD_ID128_TO_UUID_STRING(u));
++        /* On a pre-4.13 kernel the uuid cannot be carried, so the event goes out bare. It still
++         * fires; it just cannot be correlated back, which makes `udevadm trigger --settle` unusable
++         * there. `udevadm settle` against the queue is unaffected. */
++        j = kernel_has_synthetic_uevent_uuid() ? strjoina(s, " ", SD_ID128_TO_UUID_STRING(u)) : s;
+ 
+         r = sd_device_set_sysattr_value(device, "uevent", j);
+         if (r < 0)
