@@ -28,6 +28,13 @@ The only session packaged so far is sxmo on X11, behind
 KMS, which rules out every Wayland compositor. See `modules/session.nix` and
 `modules/sxmo.nix`.
 
+## Remote access
+
+`mobile.services.tailscale.enable` runs `tailscaled` as a system service. It
+needs a kernel with `CONFIG_TUN`; without one the daemon quietly falls back to
+userspace networking and stops being reachable from the tailnet. No auth key is
+in this repo — enrol each node once with `doas tailscale up`.
+
 ## Build
 
 ```sh

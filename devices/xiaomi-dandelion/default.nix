@@ -14,6 +14,7 @@
     ../../modules/stage-1-ssh.nix
     ../../modules/session.nix
     ../../modules/sxmo.nix
+    ../../modules/tailscale.nix
     ./display.nix
   ];
 
@@ -21,6 +22,10 @@
   # Mode 2: `sxmo_xinit.sh` from that shell, or set graphical.autostart.
   mobile.session.sxmo.enable = true;
   mobile.session.graphical.autostart = lib.mkDefault false;
+
+  # Enrolled by hand. Wi-Fi on this device is still untested, so the daemon has
+  # no route out yet -- it will sit in NeedsLogin until one exists.
+  mobile.services.tailscale.enable = true;
 
   # Names this physical unit, not the port. A second Redmi 9A would get its own.
   networking.hostName = "thompson";

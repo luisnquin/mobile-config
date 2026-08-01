@@ -38,6 +38,7 @@ evidence that revision 1.39.0 is safe.
 | SSH as root over RNDIS, key only | works |
 | Stage-2 / switch_root | **not started** — no rootfs is written yet |
 | Stage-2 session config (TTY, sxmo) | **evaluates only** — never built, never booted |
+| Tailscale daemon | **evaluates only** — kernel has TUN, but no network to enrol over |
 | Touch, Wi-Fi, audio, modem, charging, suspend | **untested** |
 | KMS / Wayland compositor | **impossible as-is**, see below |
 
@@ -147,6 +148,20 @@ tree last touched in 2022. Only the six it uniquely carries are built from it
 Nixpkgs, which has newer ones. Its NixOS modules are not imported at all — they
 target option paths Nixpkgs renamed years ago, and their display-manager half
 exists to toggle dwm against sway. See `modules/sxmo.nix`.
+
+### Tailscale has a real TUN device
+
+Read off the running kernel: `CONFIG_TUN=y`, and `/dev/net/tun` exists as
+`crw------- 10, 200`. `CONFIG_NF_TABLES` and `CONFIG_IP_NF_IPTABLES` are set
+too, which is what `tailscaled` needs for its own rules. So the daemon gets a
+`tailscale0` interface rather than falling back to `--tun=userspace-networking`,
+which would leave the device able to reach the tailnet but not be reached from
+it.
+
+No auth key is committed. The node is enrolled once by hand with `doas tailscale
+up`; state then lives in `/var/lib/tailscale`. Nothing can be enrolled yet —
+Wi-Fi is untested and the RNDIS link only reaches the build host, so `tailscaled`
+will sit in `NeedsLogin`.
 
 ### systemd 261 does not run on a 4.9 kernel
 
