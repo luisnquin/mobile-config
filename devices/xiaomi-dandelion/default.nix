@@ -22,6 +22,9 @@
   mobile.session.sxmo.enable = true;
   mobile.session.graphical.autostart = lib.mkDefault false;
 
+  # Names this physical unit, not the port. A second Redmi 9A would get its own.
+  networking.hostName = "thompson";
+
   system.stateVersion = "26.11";
 
   mobile.device.name = "xiaomi-dandelion";
