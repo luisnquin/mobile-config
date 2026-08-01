@@ -18,10 +18,16 @@ in
     services.tailscale = {
       enable = true;
 
-      # Sets checkReversePath to "loose". Without it the kernel drops replies
-      # arriving on tailscale0 for traffic that left another interface, which is
-      # exactly what using an exit node looks like.
-      useRoutingFeatures = "client";
+      # Left at "none". "client" only exists to set checkReversePath = "loose",
+      # which NixOS implements as an iptables `-m rpfilter` rule -- and vendor
+      # kernels tend not to build that match. dandelion's does not
+      # (CONFIG_IP_NF_MATCH_RPFILTER unset, only the IPv6 one is there), and
+      # net.ipv4.conf.*.rp_filter reads 0, so there is nothing to loosen. Asking
+      # for it fails the firewall module's own assertion at eval time.
+      #
+      # Raise this to "client" only alongside CONFIG_IP_NF_MATCH_RPFILTER, and
+      # only for a device that actually needs an exit node or subnet route.
+      useRoutingFeatures = "none";
 
       # Direct connections instead of a DERP relay. Closed, this still works --
       # just slower and through Tailscale's servers.

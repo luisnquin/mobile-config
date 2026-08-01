@@ -158,6 +158,13 @@ too, which is what `tailscaled` needs for its own rules. So the daemon gets a
 which would leave the device able to reach the tailnet but not be reached from
 it.
 
+What it does not have is `CONFIG_IP_NF_MATCH_RPFILTER` — only the IPv6 variant
+is built — and `net.ipv4.conf.*.rp_filter` reads 0. That rules out
+`services.tailscale.useRoutingFeatures = "client"`, which exists solely to set
+`networking.firewall.checkReversePath = "loose"`; NixOS asserts on it, and there
+is no reverse-path filtering here to loosen anyway. Exit nodes and subnet routes
+would need that config symbol added and the kernel rebuilt.
+
 No auth key is committed. The node is enrolled once by hand with `doas tailscale
 up`; state then lives in `/var/lib/tailscale`. Nothing can be enrolled yet —
 Wi-Fi is untested and the RNDIS link only reaches the build host, so `tailscaled`
