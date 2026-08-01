@@ -15,6 +15,7 @@
     ../../modules/session.nix
     ../../modules/sxmo.nix
     ../../modules/tailscale.nix
+    ../../modules/usb-network.nix
     ./display.nix
   ];
 
@@ -26,6 +27,9 @@
   # Enrolled by hand. Wi-Fi on this device is still untested, so the daemon has
   # no route out yet -- it will sit in NeedsLogin until one exists.
   mobile.services.tailscale.enable = true;
+
+  # Until wifi works this is the only way to reach stage-2 over the network.
+  mobile.services.usbNetwork.enable = true;
 
   # Names this physical unit, not the port. A second Redmi 9A would get its own.
   networking.hostName = "thompson";
