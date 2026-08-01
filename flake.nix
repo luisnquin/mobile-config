@@ -9,8 +9,16 @@
     flake = false;
   };
 
+  # Packages only. Its NixOS modules are not imported; see modules/sxmo.nix.
+  # Pinned by revision because the tree has not moved since 2022 and a silent
+  # update would be a change nobody asked for.
+  inputs.sxmo-nix = {
+    url = "github:wentam/sxmo-nix/74129afef2e5ebc874fc3b02bbda863c8c2a0cdc";
+    flake = false;
+  };
+
   outputs =
-    { self, mobile-nixos }:
+    { self, mobile-nixos, sxmo-nix }:
     let
       devices = {
         xiaomi-dandelion = ./devices/xiaomi-dandelion;
@@ -50,6 +58,10 @@
         import (mobileNixosFor system) {
           inherit system configuration;
           device = devices.${device};
+          # How non-flake sources reach a module's argument set.
+          additionalConfiguration = {
+            _module.args = { inherit sxmo-nix; };
+          };
         };
 
       outputsFor =
@@ -62,6 +74,7 @@
           "${device}-recovery-img" = eval.outputs.android.android-recovery;
           "${device}-fastboot-images" = eval.outputs.android.android-fastboot-images;
           "${device}-kernel" = eval.config.mobile.boot.stage-1.kernel.package;
+          "${device}-system" = eval.config.system.build.toplevel;
         };
     in
     {

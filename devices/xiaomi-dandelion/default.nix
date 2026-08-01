@@ -12,8 +12,17 @@
     ../../modules/systemd-linux-4.9.nix
     ../../modules/stage2-build-fixes.nix
     ../../modules/stage-1-ssh.nix
+    ../../modules/session.nix
+    ../../modules/sxmo.nix
     ./display.nix
   ];
+
+  # Mode 1, the default: stage-2 boots to an autologin shell on tty1.
+  # Mode 2: `sxmo_xinit.sh` from that shell, or set graphical.autostart.
+  mobile.session.sxmo.enable = true;
+  mobile.session.graphical.autostart = lib.mkDefault false;
+
+  system.stateVersion = "26.11";
 
   mobile.device.name = "xiaomi-dandelion";
   mobile.device.identity = {
@@ -21,8 +30,8 @@
     manufacturer = "Xiaomi";
   };
 
-  # Nothing has reached init on this device yet. This stays "broken" until a
-  # boot experiment produces logs; see AGENTS.md gate 4.
+  # Stage-1 boots, but no root filesystem has ever been written and stage-2 has
+  # never run. This stays "broken" until a boot reaches a login prompt.
   mobile.device.supportLevel = "broken";
 
   mobile.hardware = {

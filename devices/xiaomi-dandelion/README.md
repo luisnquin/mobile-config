@@ -37,6 +37,7 @@ evidence that revision 1.39.0 is safe.
 | USB gadget: adb + RNDIS concurrently | works |
 | SSH as root over RNDIS, key only | works |
 | Stage-2 / switch_root | **not started** — no rootfs is written yet |
+| Stage-2 session config (TTY, sxmo) | **evaluates only** — never built, never booted |
 | Touch, Wi-Fi, audio, modem, charging, suspend | **untested** |
 | KMS / Wayland compositor | **impossible as-is**, see below |
 
@@ -118,6 +119,34 @@ and weston cannot run on this device as it stands.
 Related trap: Mobile NixOS' `Tasks::Graphics` is satisfied by *either* FBDev or
 DRM, and the PowerVR node resolves it about four seconds before the framebuffer
 exists. Anything needing a framebuffer must depend on `Tasks::Graphics::FBDev`.
+
+### The session: TTY by default, sxmo on request
+
+Stage-2 has two modes, both booting to `multi-user.target` with a getty
+autologin as `mobile`:
+
+1. **tty-only** (default). A shell on `tty1`. Nothing graphical starts.
+2. **sxmo**. `sxmo_xinit.sh` from that shell, or set
+   `mobile.session.graphical.autostart = true` to `exec` it from `tty1`'s login
+   shell at boot.
+
+sxmo — not swmo. swmo is sway, sway needs KMS, and there is none here (above).
+`services.xserver.videoDrivers = [ "fbdev" ]` is the only Xorg driver that does
+not need one. That driver writes into the mmap'd framebuffer and never issues
+`FBIOPAN_DISPLAY`, which is the exact failure fbcon had, so it depends on
+`mobile.quirks.fb-refresher`. Untested.
+
+sxmo is a touch UI and touch has never been exercised on this device. There is
+also no `dandelion` device profile in sxmo-utils, so its hooks, button bindings
+and screen geometry are unconfigured.
+
+Packages come from [`wentam/sxmo-nix`](https://github.com/wentam/sxmo-nix), a
+tree last touched in 2022. Only the six it uniquely carries are built from it
+(`sxmo-utils`, `sxmo-dwm`, `sxmo-st`, `sxmo-dmenu`, `vvmd`,
+`codemadness-frontends`); `mmsd-tng`, `superd`, `mnc` and `wayout` come from
+Nixpkgs, which has newer ones. Its NixOS modules are not imported at all — they
+target option paths Nixpkgs renamed years ago, and their display-manager half
+exists to toggle dwm against sway. See `modules/sxmo.nix`.
 
 ### systemd 261 does not run on a 4.9 kernel
 

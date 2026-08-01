@@ -8,21 +8,36 @@ finished.
 
 | Device | SoC | Kernel | State |
 |---|---|---|---|
-| [`xiaomi-dandelion`](devices/xiaomi-dandelion) — Redmi 9A, M2006C3LG | MT6762G (Helio G25) | downstream 4.9.190 | stage-1 only: console, backlight, adb, SSH |
+| [`xiaomi-dandelion`](devices/xiaomi-dandelion) — Redmi 9A, M2006C3LG | MT6762G (Helio G25) | downstream 4.9.190 | stage-1 only: console, backlight, adb, SSH. Stage-2 is written but has never booted |
 
 Each device directory has its own README with the exact hardware tuple it was
 written against, what works, and how to flash it. Read that one before building
 anything.
+
+## Sessions
+
+Stage-2 boots to an autologin shell on `tty1` and nothing else. A device that
+also declares a graphical session gets it only when asked:
+
+```nix
+mobile.session.graphical.autostart = true;   # exec it from tty1's login shell
+```
+
+The only session packaged so far is sxmo on X11, behind
+`mobile.session.sxmo.enable`. It exists because these SoCs have fbdev and no
+KMS, which rules out every Wayland compositor. See `modules/session.nix` and
+`modules/sxmo.nix`.
 
 ## Build
 
 ```sh
 nix build .#xiaomi-dandelion-boot-img
 nix build .#xiaomi-dandelion-kernel
-nix develop                              # adb, fastboot, dtc, python3
+nix build .#xiaomi-dandelion-system     # stage-2 toplevel
+nix develop                             # adb, fastboot, dtc, python3
 ```
 
-Outputs are `<device>-{boot-img,recovery-img,fastboot-images,kernel}` for
+Outputs are `<device>-{boot-img,recovery-img,fastboot-images,kernel,system}` for
 `x86_64-linux` and `aarch64-linux`. x86_64 cross-compiles.
 
 Everything is pinned: Mobile NixOS by flake input, Nixpkgs by that tree's own

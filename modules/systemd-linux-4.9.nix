@@ -32,7 +32,13 @@
 {
   nixpkgs.overlays = [
     (final: prev: {
-      systemd = prev.systemd.overrideAttrs (old: {
+      # systemd's BPF programs are compiled by `clang -target bpf` against the
+      # build host's kernel headers, which a cross build does not have:
+      # `linux/bpf.h` fails on a missing `linux/types.h`. Nothing is lost by
+      # turning them off -- socket-bind, bind-iface and restrict-fs all need
+      # BTF/CO-RE and a 5.x kernel. `systemdMinimal`, which is what stage-1
+      # builds, already sets this false, which is why only stage-2 hit it.
+      systemd = (prev.systemd.override { withLibBPF = false; }).overrideAttrs (old: {
         patches = (old.patches or [ ]) ++ [
           ../patches/systemd/0002-systemd-mnt-id-fdinfo-fallback.patch
           ../patches/systemd/0003-systemd-pidfd-sigchld-fallback.patch
