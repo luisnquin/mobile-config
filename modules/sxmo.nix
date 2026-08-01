@@ -117,6 +117,13 @@ in
 
     services.libinput.enable = lib.mkDefault true;
 
+    # Anything declaring a session pulls in nixpkgs' graphical-desktop baseline,
+    # which turns speech-dispatcher on by default. sxmo has no text-to-speech,
+    # and it is not a cheap dependency: speechd -> espeak-ng -> ffmpeg ->
+    # sdl2-compat -> sdl3, all of which have to be built natively as well for
+    # espeak-ng's data generator.
+    services.speechd.enable = false;
+
     environment.systemPackages = [
       sxmoPkgs.sxmo-utils
       pkgs.superd
