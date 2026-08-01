@@ -133,7 +133,16 @@ in
     # /run/current-system/sw/share.
     environment.pathsToLink = [ "/share" ];
     services.udev.packages = [ sxmoPkgs.sxmo-utils ];
-    fonts.packages = [ pkgs.nerd-fonts.symbols-only ];
+    # The same graphical-desktop baseline turns on the default font set, which
+    # is noto-fonts-cjk-{sans,serif} plus noto-fonts-color-emoji. The emoji one
+    # runs zopflipng over a few thousand PNGs at build time, and none of it is
+    # substitutable on a cross build. dwm and st ask fontconfig for "monospace",
+    # so DejaVu is the whole requirement.
+    fonts.enableDefaultPackages = false;
+    fonts.packages = [
+      pkgs.dejavu_fonts
+      pkgs.nerd-fonts.symbols-only
+    ];
 
     powerManagement.enable = lib.mkDefault true;
 
