@@ -82,9 +82,19 @@ let
       # rusty-v8 -> a rust toolchain whose clippy does not cross-compile.
       youtube-dl = pkgs.emptyDirectory;
 
-      # Same closure through the back door: mpv puts yt-dlp on its fallback
-      # PATH by default.
-      mpv = pkgs.mpv.override { youtubeSupport = false; };
+      # mpv reaches Qt 6 by a route nothing here asks for: mpv ->
+      # libdisplay-info -> v4l-utils, whose qv4l2/qvidcap GUIs are built by
+      # default, and libdisplay-info wants v4l-utils only to run its tests. That
+      # is qtbase, qttools, qttranslations and qt5compat cross-built so a media
+      # player can read EDIDs on a panel with no EDID. Only sxmo_youtube.sh,
+      # sxmo_record.sh playback and the notification sounds use it.
+      mpv = pkgs.emptyDirectory;
+
+      # The keypress click. Opt-in upstream -- it appears only in commented-out
+      # KEYBOARD_ARGS lines in profile_template -- and it costs sdl2-compat ->
+      # sdl3 -> zenity -> gtk4, because SDL3 shells out to zenity for message
+      # boxes.
+      clickclack = pkgs.emptyDirectory;
 
       # svkbd's config.mk calls `pkg-config` by its bare name. Cross builds
       # install the wrapper under a target prefix only, so the call resolves to
@@ -97,6 +107,29 @@ let
         '';
       });
     };
+  };
+
+  # sxmo_hook_scripts.sh builds the Scripts menu from every executable under
+  # `xdg_data_path sxmo/appscripts`, and environment.pathsToLink merges each
+  # package's share/ into one tree -- so a menu entry is a package, with no
+  # mutable dotfile to seed. The `# title=` line is parsed by that hook.
+  #
+  # sxmo's own `sxmo_power.sh logout` is not usable here: it decides how to end
+  # the session by reading /var/lib/tinydm/default-session.desktop, and this
+  # device has no display manager, so neither branch matches and nothing
+  # happens. Killing dwm ends xinit, which returns from sxmo_xinit.sh into the
+  # login shell that called it.
+  ttyModeApp = pkgs.writeTextFile {
+    name = "sxmo-appscript-tty-mode";
+    destination = "/share/sxmo/appscripts/sxmo_tty_mode.sh";
+    executable = true;
+    text = ''
+      #!/bin/sh
+      # title="TTY mode (leave sxmo)"
+      session-mode tty
+      sxmo_hook_logout.sh
+      ${pkgs.procps}/bin/pkill dwm
+    '';
   };
 in
 {
@@ -127,7 +160,7 @@ in
     environment.systemPackages = [
       sxmoPkgs.sxmo-utils
       pkgs.superd
-    ];
+    ] ++ lib.optional cfg.graphical.autostart ttyModeApp;
 
     # sxmo reads hooks, superd services and its own configuration out of
     # /run/current-system/sw/share.
@@ -166,9 +199,15 @@ in
       permit nopass :wheel as root cmd systemctl args stop ModemManager
     '';
 
+    # Not `exec`: replacing the login shell leaves nothing to return to, so
+    # quitting sxmo -- or X failing to start at all -- ends the shell, getty
+    # respawns it, autologin fires and the session restarts. That is an
+    # unbreakable loop on a device with no keyboard. Falling through to the
+    # shell instead makes "quit" mean tty until the next login, and
+    # `session-mode tty` makes it mean tty until told otherwise.
     environment.loginShellInit = lib.mkIf cfg.graphical.autostart ''
-      if [ "$(tty)" = /dev/tty1 ]; then
-        exec sxmo_xinit.sh
+      if [ "$(tty)" = /dev/tty1 ] && [ ! -e ${cfg.graphical.overrideFlag} ]; then
+        sxmo_xinit.sh
       fi
     '';
   };
