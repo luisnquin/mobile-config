@@ -1,9 +1,10 @@
 # Xiaomi Redmi 9A — `dandelion`
 
-**This is not a usable phone.** It is a stage-1 initramfs that boots, lights the
-panel, prints a console and serves key-authenticated SSH over the USB gadget.
-There is no stage-2, no root filesystem, no touch, no graphical shell. Flashing
-it replaces your recovery partition.
+**This is not a usable phone.** Stage-1 boots, lights the panel, prints a console
+and serves key-authenticated SSH over the USB gadget. A root filesystem is
+written and hash-verified, and `switch_root` happens — but systemd has never
+reached a service manager, so there is no session, no touch and no graphical
+shell. Flashing it replaces your recovery partition.
 
 ## Target
 
@@ -36,15 +37,16 @@ evidence that revision 1.39.0 is safe.
 | Framebuffer console on `tty1`, readable text | works |
 | USB gadget: adb + RNDIS concurrently | works |
 | SSH as root over RNDIS, key only | works |
-| Stage-2 / switch_root | **not started** — no rootfs is written yet |
-| Stage-2 session config (TTY, sxmo) | **evaluates only** — never built, never booted |
+| Stage-2 rootfs written to `userdata` | written and hash-verified, see below |
+| Stage-2 / switch_root | reached — USB tears down on cue, then nothing |
+| Stage-2 session config (TTY, sxmo) | **built, never observed to boot** |
 | Tailscale daemon | **evaluates only** — kernel has TUN, but no network to enrol over |
 | Touch, Wi-Fi, audio, modem, charging, suspend | **untested** |
 | KMS / Wayland compositor | **impossible as-is**, see below |
 
 `boot` has never been written on the development unit. Neither have `dtbo`,
-`vbmeta`, `super`, `userdata`, `lk`, `preloader_*`, `seccfg`, `nvram`, `nvdata`,
-or the partition table.
+`vbmeta`, `super`, `lk`, `preloader_*`, `seccfg`, `nvram`, `nvdata`, or the
+partition table. `userdata` and `para` have: see "Where the rootfs lives" below.
 
 ## Flash and connect
 
@@ -74,6 +76,36 @@ stage-1 `/etc/passwd` locks the account. Put your key in
 `recovery` on this device measures 67108864 bytes. Check the fit before writing,
 and have the exact stock `V12.0.22.0.QCDMIXM` package and a hashed stock
 `recovery.img` on hand first.
+
+## Working on the port
+
+Everything that touches the device is a flake app. Each one refuses to run
+unless `HADAHAORHAV8YHB6` appears in the device's `/proc/cmdline`, checked before
+every destructive step rather than once at startup, because the device drops off
+the bus and returns between steps routinely.
+
+```sh
+nix run .#dandelion-latch        # then power-cycle: parks the device in stage-1
+nix run .#dandelion-log          # read the bring-up log, no mount needed
+nix run .#dandelion-deploy -- result-dandelion/system.img
+nix run .#dandelion-verify -- result-dandelion/system.img
+nix run .#dandelion-flash-bootimg -- result-dandelion/boot.img   # targets recovery
+nix run .#dandelion-reboot       # sysrq; `adb reboot` fails in stage-1
+nix run .#dandelion-unlatch      # let the next boot proceed to stage-2
+```
+
+`dandelion-latch` is the one that makes the rest possible. A normal boot exposes
+adb for about sixteen seconds before stage-2 tears the gadget down, which is not
+enough time to do anything. Zeroing the ext4 superblock magic at byte 1080 makes
+stage-1 fail to mount root and fall into its `shellOnFail` shell, which blocks on
+`/dev/console` forever — so adbd stays up indefinitely. `dandelion-deploy`
+re-arms that latch for the duration of a write and restores it last, by writing
+chunk 0 after every other chunk: an interrupted write then re-parks the device
+instead of handing stage-1 a valid superblock over a half-written filesystem.
+
+Build outputs must use `--out-link`. `nix build --no-link --print-out-paths`
+creates no GC root, and a `nix-gc` run has already deleted a finished 3 GB image
+mid-session.
 
 ## Findings
 
@@ -124,12 +156,47 @@ exists. Anything needing a framebuffer must depend on `Tasks::Graphics::FBDev`.
 ### The session: TTY by default, sxmo on request
 
 Stage-2 has two modes, both booting to `multi-user.target` with a getty
-autologin as `mobile`:
+autologin as `mobile`. The only difference in the entire system is one guard in
+`environment.loginShellInit`:
 
-1. **tty-only** (default). A shell on `tty1`. Nothing graphical starts.
-2. **sxmo**. `sxmo_xinit.sh` from that shell, or set
-   `mobile.session.graphical.autostart = true` to `exec` it from `tty1`'s login
-   shell at boot.
+1. **tty-only**. A shell on `tty1`. Nothing graphical starts.
+2. **sxmo**. `tty1`'s login shell runs `sxmo_xinit.sh`.
+
+This device selects mode 2 (`mobile.session.graphical.autostart = true`), unlike
+the module default, because it has no keyboard: mode 1 assumes someone can type
+on the panel, and the only USB port is taken by the gadget carrying adb and ssh,
+so an OTG keyboard would cost the session its own lifeline.
+
+Switching back does not need a keyboard either. sxmo's own menu grows a **"TTY
+mode (leave sxmo)"** entry under Scripts, which sets the flag below and kills
+dwm. It is shipped as a package with a `share/sxmo/appscripts/` entry rather than
+a dotfile, because `environment.pathsToLink = [ "/share" ]` merges that directory
+across packages and `sxmo_hook_scripts.sh` reads whatever it finds there.
+
+sxmo's built-in `sxmo_power.sh logout` is not that entry and does not work here:
+it chooses how to end the session by reading
+`/var/lib/tinydm/default-session.desktop`, and this device has no display
+manager, so neither of its branches matches and the call is a no-op.
+
+The login hook deliberately does not `exec` —
+replacing the login shell would leave nothing to return to, so quitting sxmo, or
+X failing to start at all, would end the shell, getty would respawn it, autologin
+would fire and the session would restart forever. Falling through to the shell
+makes "quit" mean tty until the next login. For something that survives a reboot:
+
+```sh
+session-mode tty       # plain shell from the next login on
+session-mode gui       # back to sxmo
+session-mode status    # -> tty | gui
+```
+
+That toggles `mobile.session.graphical.overrideFlag`
+(`/var/lib/mobile-session/tty-only`), whose directory is owned by the session
+user on purpose — needing `doas` to leave a graphical session means typing a
+password on the on-screen keyboard being escaped.
+
+The `tty1` test in the guard is what keeps ssh on a plain shell in both modes, so
+enabling the GUI can never cost the remote shell.
 
 sxmo — not swmo. swmo is sway, sway needs KMS, and there is none here (above).
 `services.xserver.videoDrivers = [ "fbdev" ]` is the only Xorg driver that does
@@ -149,7 +216,69 @@ Nixpkgs, which has newer ones. Its NixOS modules are not imported at all — the
 target option paths Nixpkgs renamed years ago, and their display-manager half
 exists to toggle dwm against sway. See `modules/sxmo.nix`.
 
-### Tailscale has a real TUN device
+### Where the rootfs lives, and how to get back
+
+There is no `misc` partition on this GPT. MediaTek's LK reads the Android boot
+control block out of **`para` (`mmcblk0p3`)** instead, and it honours it: `para`
+was found already holding `bootonce-bootloader`. Writing the 32-byte command
+`boot-recovery` at offset 0 is therefore how stage-1 is re-entered without a
+key combination, and — because nothing in this port clears it — how the device
+keeps coming back to stage-1 after every reset. Back `para` up before writing
+it. That property is the whole safety net here: `boot` (`p33`) still holds stock
+Android and has never been touched.
+
+The rootfs goes to **`userdata` (`mmcblk0p41`, 24 353 160 704 bytes)**, streamed
+over `adb exec-out`/SSH with `dd`, not fastboot. It is outside AVB, so nothing
+about `vbmeta` or rollback changes.
+
+`switch_root` drops USB, and that is expected rather than a fault:
+`boot.postBootCommands` in mobile-nixos' `modules/adb.nix` pkills `adbd` before
+`exec`ing systemd, which tears down the functionfs backing `ffs.adb` and unbinds
+the UDC. `modules/adb.nix` re-enables the gadget from
+`systemd.services.adbd` — but that unit is `wantedBy = multi-user.target`. So
+**USB returning is a signal that stage-2 reached `multi-user.target`, and USB
+staying dark says nothing more precise than "it did not"**. The same is true of
+the network: `modules/usb-network.nix` replaces the stage-1 `ifconfig` + `udhcpd`
+pair, and it is equally late.
+
+On the development unit the host bus saw exactly one enumeration after the
+reboot — stage-1, thirteen seconds, then disconnect — and nothing since. One
+enumeration means no reboot loop and no watchdog reset: the kernel is alive and
+stage-2 is stuck somewhere ahead of `multi-user.target`. Which is unsurprising,
+because systemd has never actually run as PID 1 on this device; stage-1 is mruby,
+and the only part of systemd exercised so far is udev.
+
+### Reading a stage-2 that never came back
+
+The panel carries `console=tty1` and is the only live channel. Three mechanisms
+were added for this, in the order they were tried, and the first two are
+documented here because their failure is what motivates the third:
+
+- `systemd.log_target=kmsg` puts PID 1's log in the kernel ring buffer.
+  `CONFIG_MTK_RAM_CONSOLE`, `CONFIG_PSTORE_RAM` and `CONFIG_PSTORE_CONSOLE` are
+  all set, which should make that buffer survive a reset. **It does not on this
+  SoC.** After a power cut, `/proc/last_kmsg` and `/sys/fs/pstore` are both
+  empty. Setting the config symbols was not sufficient.
+- `services.journald.storage = "persistent"` puts the journal on the rootfs.
+  Useless for the failure actually being chased: PID 1 freezes in
+  `mount_setup()`, long before journald is started, so there is no journal.
+- `modules/bringup-log` writes the kernel ring buffer to a **raw offset inside
+  `mmcblk0p41`, past the end of its filesystem**, every two seconds, in two
+  alternating 64 MiB slots. Nothing about reading it depends on systemd, on
+  journald, on adb surviving, or on the partition being mountable — which
+  matters more than it sounds, because the only way to hold this device still
+  long enough to read anything is to zero its ext4 superblock magic, and that is
+  precisely the state in which no file on it can be opened.
+
+  `nix run .#dandelion-log > stage2.log`. The offsets live in
+  `modules/bringup-log/layout.nix`, imported by both the writer and the reader.
+  Growing the rootfs past 16 GiB would overwrite the log.
+
+A userspace loop writing to `/dev/console` never enters the kernel ring buffer,
+so none of the above can see one. That class of bug is found by photographing
+the panel, and one was: see `stage-1/display-task.rb`.
+
+
 
 Read off the running kernel: `CONFIG_TUN=y`, and `/dev/net/tun` exists as
 `crw------- 10, 200`. `CONFIG_NF_TABLES` and `CONFIG_IP_NF_IPTABLES` are set
@@ -172,12 +301,19 @@ will sit in `NeedsLogin`.
 
 ### systemd 261 does not run on a 4.9 kernel
 
-Four patches under `patches/systemd/` restore fallbacks for `STATX_MNT_ID`
-(Linux 5.8), `pidfd_open()` (5.3) and `kobject_synth_uevent()` (4.13), plus the
-`SIGCHLD` blocking the pidfd path made implicit. Each was found by booting and
-reading the failure. Expect more. The alternative is pinning Nixpkgs back to a
-systemd old enough for this kernel, which trades a handful of local patches for
-a very large downgrade across the whole system.
+Five patches under `patches/systemd/` restore fallbacks for `STATX_MNT_ID`
+(Linux 5.8), `pidfd_open()` (5.3) and `kobject_synth_uevent()` (4.13), the
+`SIGCHLD` blocking the pidfd path made implicit, and — the only one from full
+systemd as PID 1 — `statx()` itself (4.11) together with `STATX_ATTR_MOUNT_ROOT`
+(5.8). Each was found by booting and reading the failure. Expect more. The
+alternative is pinning Nixpkgs back to a systemd old enough for this kernel,
+which trades a handful of local patches for a very large downgrade across the
+whole system.
+
+The list is `patches/systemd/default.nix`, imported both by
+`modules/systemd-linux-4.9.nix` and by `checks.<system>.systemd-patches`, so
+`nix flake check` proves the set still applies against the current Nixpkgs
+without cross-compiling anything or touching the device.
 
 ## Toolchain deviation
 
