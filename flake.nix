@@ -40,6 +40,12 @@
 
       pkgsFor = system: import "${mobile-nixos}/pkgs.nix" { inherit system; };
 
+      # Host-side device operations. Exposed as both packages and apps: as apps
+      # so they are one command, as packages so `--out-link` can hold them
+      # against the garbage collector that has already eaten this port's build
+      # outputs once.
+      toolsFor = system: import ./tools { pkgs = pkgsFor system; };
+
       # Android boot header v2 is not expressible upstream, and dandelion's
       # bootloader rejects v0 and v1. A patch fails loudly; an overlay would
       # silently no-op.
@@ -82,9 +88,38 @@
 
       packages = forEachSystem (
         system:
-        builtins.foldl' (acc: device: acc // outputsFor system device) { } (
+        builtins.foldl' (acc: device: acc // outputsFor system device) (toolsFor system) (
           builtins.attrNames devices
         )
+      );
+
+      apps = forEachSystem (
+        system:
+        builtins.mapAttrs (name: drv: {
+          type = "app";
+          program = "${drv}/bin/${name}";
+          # The flake app schema carries its own meta; the derivation's is not
+          # consulted, and `nix flake check` warns about every app without one.
+          meta = drv.meta or { };
+        }) (toolsFor system)
+      );
+
+      # Cheap enough to run on every change, and it covers the failure that is
+      # most expensive to discover late: a nixpkgs bump moving systemd far enough
+      # that the 4.9 compatibility patches no longer apply. Native source, no
+      # cross-compilation, no device.
+      checks = forEachSystem (
+        system:
+        let
+          pkgs = pkgsFor system;
+        in
+        {
+          systemd-patches = pkgs.applyPatches {
+            name = "systemd-linux-4.9-patches-apply";
+            src = pkgs.systemd.src;
+            patches = import ./patches/systemd;
+          };
+        }
       );
 
       devShells = forEachSystem (

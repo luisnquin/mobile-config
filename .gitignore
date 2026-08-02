@@ -2,3 +2,5 @@ result
 result-*
 *.img
 .direnv/
+.local/
+*.local.md
