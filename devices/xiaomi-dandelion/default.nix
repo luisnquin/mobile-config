@@ -11,6 +11,8 @@
     ../../modules/soc/mt6765.nix
     ../../modules/systemd-linux-4.9.nix
     ../../modules/stage2-build-fixes.nix
+    ../../modules/stage2-bringup.nix
+    ../../modules/bringup-log
     ../../modules/stage-1-ssh.nix
     ../../modules/session.nix
     ../../modules/sxmo.nix
@@ -19,10 +21,17 @@
     ./display.nix
   ];
 
-  # Mode 1, the default: stage-2 boots to an autologin shell on tty1.
-  # Mode 2: `sxmo_xinit.sh` from that shell, or set graphical.autostart.
+  # Mode 1: stage-2 boots to an autologin shell on tty1, and `sxmo_xinit.sh`
+  # from that shell starts the session by hand.
+  # Mode 2, selected here: tty1's login shell execs it at boot.
+  #
+  # Mode 2 rather than the module default, because this unit has no keyboard.
+  # Mode 1 assumes someone can type on the panel, and the only USB port is
+  # occupied by the gadget that carries adb and ssh -- an OTG keyboard would
+  # take the session's own lifeline. The tty1 guard in modules/sxmo.nix means
+  # ssh still lands on a plain shell either way.
   mobile.session.sxmo.enable = true;
-  mobile.session.graphical.autostart = lib.mkDefault false;
+  mobile.session.graphical.autostart = true;
 
   # Enrolled by hand. Wi-Fi on this device is still untested, so the daemon has
   # no route out yet -- it will sit in NeedsLogin until one exists.
@@ -42,8 +51,11 @@
     manufacturer = "Xiaomi";
   };
 
-  # Stage-1 boots, but no root filesystem has ever been written and stage-2 has
-  # never run. This stays "broken" until a boot reaches a login prompt.
+  # The rootfs is written and verified and stage-2 does start, but PID 1 has
+  # never reached a service manager: it froze in mount_setup() (see
+  # patches/systemd/0006-*.patch, which is the attempt to fix that and has not
+  # been tested on hardware yet). This stays "broken" until a boot reaches a
+  # login prompt.
   mobile.device.supportLevel = "broken";
 
   mobile.hardware = {
@@ -204,6 +216,25 @@
     # this command line), and it is only useful if something is printed on it.
     # Remove once the port boots.
     "ignore_loglevel"
+
+    # Stage-2 has no observation channel of its own. systemd's default log
+    # target is the journal, and the journal is unreadable while the boot it
+    # describes is still hanging. Routing PID 1 through /dev/kmsg instead puts
+    # it in the kernel ring buffer, where mobile.bringup.rawLog can copy it to a
+    # raw offset on p41 every two seconds.
+    #
+    # Not pstore: CONFIG_MTK_RAM_CONSOLE, CONFIG_PSTORE_RAM and
+    # CONFIG_PSTORE_CONSOLE are all set, and after a power-off neither
+    # /proc/last_kmsg nor /sys/fs/pstore had anything. The symbols being present
+    # is not evidence the region is preserved, and that is why the log ring
+    # writes to flash instead.
+    #
+    # `debug` is deliberately not used: kmsg is echoed to `console=tty1`, the
+    # framebuffer, and fbcon scrolls slowly enough that debug-level output is
+    # itself indistinguishable from a hang.
+    "systemd.log_target=kmsg"
+    "systemd.log_level=info"
+    "systemd.show_status=true"
   ];
 
   # The one observation channel that does not depend on this port working.
@@ -250,6 +281,28 @@
   # /applets/boot-error.mrb at all, so disabling this removes the panic path
   # rather than merely losing a race with it.
   mobile.boot.stage-1.gui.enable = false;
+
+  # The RAM console above only survives one reset. This survives every reset,
+  # for anything that gets far enough for journald to run at all -- which so far
+  # nothing has, because the freeze is upstream of the service manager.
+  services.journald.storage = "persistent";
+
+  # So this is the capture that does not depend on journald, on systemd, on adb,
+  # or on the rootfs being mountable: the kernel ring buffer, written every two
+  # seconds to a raw offset inside p41 past the end of the filesystem.
+  #
+  # Reading it is one `dd` with the partition unmounted, which matters because
+  # the debug window on this device is created by zeroing the ext4 magic. The
+  # previous capture wrote /var/kmsg.log, and reading that meant restoring the
+  # magic, mounting, copying, unmounting and re-zeroing -- five steps to read one
+  # file, at the exact moment the filesystem is deliberately unmountable.
+  #
+  # modules/bringup-log/layout.nix documents the offsets and the constraint this
+  # puts on ever resizing the rootfs.
+  mobile.bringup.rawLog = {
+    enable = true;
+    device = "/dev/mmcblk0p41";
+  };
 
   # Puts adbd in the initrd and adds "adb" to the gadget's function list; the
   # stage-1 gadget task spawns it (modules/stage-1/tasks/usb-gadget-task.rb:31).
