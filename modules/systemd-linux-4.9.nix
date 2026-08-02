@@ -1,7 +1,10 @@
 # systemd 261 does not run on this device's vendor kernel. Its baseline is far
 # above 4.9.190, and the assumptions below are load-bearing rather than
-# cosmetic. All were found by booting stage-1 and reading the failure, not by
-# reading release notes; each patch's header records the measurement.
+# cosmetic. All were found by booting and reading the failure, not by reading
+# release notes; each patch's header records the measurement. 0002-0005 came out
+# of `systemdMinimal` in stage-1; 0006 is the first one from full systemd as PID
+# 1, which is a separate set of baseline assumptions and was never exercised
+# until the rootfs booted far enough to reach it.
 #
 #   0002  chase() asks xstatx_full() for a mount id and returns -EUNATCH when
 #         statx() does not supply one. STATX_MNT_ID is Linux 5.8, statx() itself
@@ -17,6 +20,12 @@
 #         while its signal is unblocked. Attempt 16: 1061 devices processed but
 #         14 permanent zombie workers and `udevadm settle` timing out, because
 #         reaping only happened as a side effect of adding the next child.
+#   0006  glibc emulates the missing statx() (Linux 4.11) from fstatat() and
+#         rejects the AT_STATX_*_SYNC flags with EINVAL; separately,
+#         STATX_ATTR_MOUNT_ROOT is Linux 5.8. Stage-2 attempt 1: PID 1 could not
+#         decide whether /proc, /sys and /dev were mount points, and mount_setup()
+#         treats that as fatal, so systemd froze at 27.0s with no service manager
+#         running. Also the reason 0002 had never actually been reachable.
 #
 # Expect more of these. The alternative is pinning nixpkgs to a systemd old
 # enough to still support this kernel, which trades a small number of local
@@ -27,11 +36,18 @@
 # `systemd.override { ... }` against the final package set, and overrideAttrs
 # survives override, so it inherits the patch. Patching it a second time here
 # would make the patch fail to apply.
-{ ... }:
+#
+# Scoped to aarch64 on purpose. `nixpkgs.overlays` also applies to
+# `pkgs.buildPackages`, so an unscoped override patches the x86_64 systemd that
+# performs the cross build, invalidates everything downstream of it, and forces
+# a local rebuild of native qtbase, openjdk and gtk4 instead of substituting
+# them from cache.nixos.org. Nothing here is wanted on the build host: these
+# work around a 4.9.190 vendor kernel, and the builder runs a current one.
+{ lib, ... }:
 
 {
   nixpkgs.overlays = [
-    (final: prev: {
+    (final: prev: lib.optionalAttrs prev.stdenv.hostPlatform.isAarch64 {
       # systemd's BPF programs are compiled by `clang -target bpf` against the
       # build host's kernel headers, which a cross build does not have:
       # `linux/bpf.h` fails on a missing `linux/types.h`. Nothing is lost by
@@ -44,6 +60,7 @@
           ../patches/systemd/0003-systemd-pidfd-sigchld-fallback.patch
           ../patches/systemd/0004-systemd-uevent-no-synthetic-uuid.patch
           ../patches/systemd/0005-systemd-block-sigchld-without-pidfd.patch
+          ../patches/systemd/0006-systemd-statx-sync-flags-and-mount-root.patch
         ];
       });
     })

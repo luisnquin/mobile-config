@@ -1,0 +1,130 @@
+systemd: do not require statx() sync flags or STATX_ATTR_MOUNT_ROOT
+
+systemd 261 PID 1 calls mount_setup() before it mounts anything, and mount_one()
+treats a failed path_is_mount_point_full() on any MNT_FATAL entry as unrecoverable.
+On dandelion that check failed for /proc, /sys and /dev and systemd froze at 27.0s
+on the first stage-2 boot, leaving the device running with no service manager:
+
+  systemd[1]: Failed to determine whether /proc is a mount point: Invalid argument
+  systemd[1]: Failed to determine whether /sys is a mount point: Invalid argument
+  systemd[1]: Failed to determine whether /dev is a mount point: Invalid argument
+  systemd[1]: Freezing execution.
+
+read back from a dmesg snapshot written to the rootfs, since stage-2 kills adbd
+before starting systemd and journald never runs.
+
+Two separate kernel-age problems stack up on the way there.
+
+statx() is Linux 4.11 and this port's kernel is the vendor 4.9.190, so glibc falls
+back to statx_generic(), which emulates the call from fstatat().  That emulation
+accepts only AT_EMPTY_PATH, AT_NO_AUTOMOUNT and AT_SYMLINK_NOFOLLOW and rejects
+anything else with EINVAL rather than ignoring it (glibc-2.42/io/statx_generic.c).
+is_mount_point_at() passes AT_STATX_DONT_SYNC, so the call never ran at all -- that
+EINVAL is the "Invalid argument" in the log.  The AT_STATX_*_SYNC flags only choose
+how hard to chase coherency with a network server, so xstatx_full() now retries
+without them instead of failing.  This also un-blocks 0002: every caller that asks
+for a mount id passes AT_STATX_DONT_SYNC too, so the fdinfo fallback added there sat
+behind a statx() that had already returned EINVAL and could never be reached.
+
+STATX_ATTR_MOUNT_ROOT is Linux 5.8.  Below that the attribute is never reported, so
+even once statx() succeeds xstatx_full() rejects it as a missing mandatory attribute
+and returns -EUNATCH.  is_mount_point_at() now falls back to comparing st_dev
+against the parent directory, which is what systemd itself did before statx()
+existed.  That test cannot see a bind mount contained within a single file system,
+so it stays a fallback; it is exact for the API file systems mount_setup() cares
+about, which are all distinct from the rootfs.  Where it cannot answer at all --
+a non-directory, hence -ENOTDIR -- the original -EUNATCH is returned rather than a
+false "not a mount point".
+
+Upstream is unlikely to take this: systemd's baseline is far above 4.9.  It is
+carried here because the dandelion port has no newer kernel available.
+
+--- a/src/basic/stat-util.c	2026-08-01 11:21:58.688080237 -0500
++++ b/src/basic/stat-util.c	2026-08-01 11:22:13.213667391 -0500
+@@ -487,12 +487,23 @@
+         if (FLAGS_SET(xstatx_flags, XSTATX_MNT_ID_BEST))
+                 request_mask |= STATX_MNT_ID|STATX_MNT_ID_UNIQUE;
+ 
+-        if (statx(fd,
+-                  strempty(path),
+-                  statx_flags|(isempty(path) ? AT_EMPTY_PATH : 0),
+-                  request_mask,
+-                  &sx) < 0)
+-                return negative_errno();
++        int at_flags = statx_flags|(isempty(path) ? AT_EMPTY_PATH : 0);
++
++        if (statx(fd, strempty(path), at_flags, request_mask, &sx) < 0) {
++
++                /* glibc emulates statx() from fstatat() when the kernel does not implement it (the
++                 * syscall is Linux 4.11), and that emulation rejects any flag outside AT_EMPTY_PATH,
++                 * AT_NO_AUTOMOUNT and AT_SYMLINK_NOFOLLOW with EINVAL rather than ignoring it. The
++                 * AT_STATX_*_SYNC flags only pick how hard to chase coherency with a network server, so
++                 * losing them costs nothing on a local file system -- retry without them instead of
++                 * failing the call outright. */
++
++                if (errno != EINVAL || (at_flags & AT_STATX_SYNC_TYPE) == 0)
++                        return negative_errno();
++
++                if (statx(fd, strempty(path), at_flags & ~AT_STATX_SYNC_TYPE, request_mask, &sx) < 0)
++                        return negative_errno();
++        }
+ 
+         if (FLAGS_SET(xstatx_flags, XSTATX_MNT_ID_BEST) &&
+             !(sx.stx_mask & (STATX_MNT_ID|STATX_MNT_ID_UNIQUE))) {
+--- a/src/basic/mountpoint-util.c	2026-08-01 11:21:58.686927538 -0500
++++ b/src/basic/mountpoint-util.c	2026-08-01 11:22:42.333765831 -0500
+@@ -239,6 +239,37 @@
+         return TAKE_PTR(fh_copy);
+ }
+ 
++static int is_mount_root_by_parent(int dir_fd, const char *path, int flags) {
++
++        /* STATX_ATTR_MOUNT_ROOT needs Linux 5.8. Below that the attribute is simply never reported, so
++         * xstatx_full() gives up with -EUNATCH and every caller sees a hard error. Fall back to the test
++         * systemd itself used before statx() existed: a directory is the root of a mount if its st_dev
++         * differs from its parent's, or if it is its own parent. This cannot see a bind mount that stays
++         * within one file system, which is why it stays a fallback and not the primary path. */
++
++        _cleanup_close_ int fd = -EBADF;
++        struct stat a, b;
++
++        assert(wildcard_fd_is_valid(dir_fd));
++
++        fd = openat(dir_fd, isempty(path) ? "." : path,
++                    O_PATH|O_DIRECTORY|O_CLOEXEC|
++                    (isempty(path) || FLAGS_SET(flags, AT_SYMLINK_FOLLOW) ? 0 : O_NOFOLLOW));
++        if (fd < 0)
++                return -errno;
++
++        if (fstatat(fd, "", &a, AT_EMPTY_PATH) < 0)
++                return -errno;
++
++        if (fstatat(fd, "..", &b, 0) < 0)
++                return -errno;
++
++        if (a.st_dev != b.st_dev)
++                return true;
++
++        return a.st_ino == b.st_ino;
++}
++
+ int is_mount_point_at(int dir_fd, const char *path, int flags) {
+         int r;
+ 
+@@ -261,6 +292,16 @@
+                         /* optional_mask = */ 0,
+                         STATX_ATTR_MOUNT_ROOT,
+                         &sx);
++        if (r == -EUNATCH) {
++                /* Kernel too old to report STATX_ATTR_MOUNT_ROOT. Only take the parent comparison when it
++                 * can actually answer -- it needs a directory -- and otherwise report the original
++                 * error, rather than claiming something is not a mount point when we simply cannot tell. */
++                r = is_mount_root_by_parent(dir_fd, path, flags);
++                if (r != -ENOTDIR)
++                        return r;
++
++                return -EUNATCH;
++        }
+         if (r < 0)
+                 return r;
+ 

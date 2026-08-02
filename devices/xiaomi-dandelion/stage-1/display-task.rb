@@ -134,6 +134,19 @@ class Tasks::DandelionDisplay < SingletonTask
   # Spawned as a shell loop rather than a Ruby thread: the stage-1 init is mruby
   # 4.0.0, which has no Thread. This mirrors how the fb-refresher quirk runs its
   # own loop.
+  #
+  # The loop has to end itself at switch_root, and nothing else will do it. It is
+  # spawned detached, so stage-1 does not reap it; its `sh` keeps running from
+  # the dismantled initramfs, where PATH no longer resolves and the old /sys is
+  # gone. Observed on a real boot: `sleep` stopped resolving, which left `while
+  # true` with nothing to throttle it, and the loop spun a core while writing two
+  # failures per iteration to /dev/console -- for 428s, until the battery or the
+  # user intervened. That starves stage-2 badly enough to look like a hang.
+  #
+  # So: an absolute path to sleep, because PATH is what disappears first, and a
+  # loop condition on the node itself rather than `true`. After switch_root the
+  # old root's /sys/class/leds is empty, the condition fails, and the loop exits
+  # on its own. Stage-2 owns the backlight from that point.
   def start_backlight()
     unless File.exist?(BACKLIGHT)
       log("dandelion-display: no backlight control node at #{BACKLIGHT}")
@@ -141,10 +154,11 @@ class Tasks::DandelionDisplay < SingletonTask
     end
     log("dandelion-display: driving backlight via #{BACKLIGHT}")
 
+    sleep_bin = System.which("sleep") || "sleep"
     steps = REFRESH_LEVELS.map do |level|
-      "echo #{level} > #{BACKLIGHT}; sleep #{REFRESH_INTERVAL}"
+      "echo #{level} > #{BACKLIGHT} || exit 0; #{sleep_bin} #{REFRESH_INTERVAL} || exit 0"
     end
-    System.spawn("sh", "-c", "while true; do #{steps.join("; ")}; done")
+    System.spawn("sh", "-c", "while [ -w #{BACKLIGHT} ]; do #{steps.join("; ")}; done")
   end
 
   def write_node(path, value)
