@@ -54,14 +54,13 @@
       # turning them off -- socket-bind, bind-iface and restrict-fs all need
       # BTF/CO-RE and a 5.x kernel. `systemdMinimal`, which is what stage-1
       # builds, already sets this false, which is why only stage-2 hit it.
+      # The list lives in ../patches/systemd/default.nix so that the flake's
+      # `checks.systemd-patches` applies exactly this set against the native
+      # systemd source. A patch that stops applying after a nixpkgs bump is then
+      # a failed `nix flake check` in seconds, rather than a cross-compile, a
+      # 3 GB device write and a boot.
       systemd = (prev.systemd.override { withLibBPF = false; }).overrideAttrs (old: {
-        patches = (old.patches or [ ]) ++ [
-          ../patches/systemd/0002-systemd-mnt-id-fdinfo-fallback.patch
-          ../patches/systemd/0003-systemd-pidfd-sigchld-fallback.patch
-          ../patches/systemd/0004-systemd-uevent-no-synthetic-uuid.patch
-          ../patches/systemd/0005-systemd-block-sigchld-without-pidfd.patch
-          ../patches/systemd/0006-systemd-statx-sync-flags-and-mount-root.patch
-        ];
+        patches = (old.patches or [ ]) ++ import ../patches/systemd;
       });
     })
   ];
