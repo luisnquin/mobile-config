@@ -1,0 +1,56 @@
+systemd: retry the cgroup2 mount without options the kernel rejects
+
+With 0006 applied, PID 1 gets past mount_setup()'s mount point checks and reaches
+the cgroup2 entry, where it freezes instead. Measured on dandelion (Linux 4.9.190),
+stage-2 boot of 2026-08-02, read out of the raw log ring:
+
+  [ 37.846636] systemd[1]: Failed to determine whether cgroupfs supports
+               'memory_hugetlb_accounting' mount option, assuming not:
+               Function not implemented
+  [ 37.944391] cgroup: cgroup2: unknown option "nsdelegate,memory_recursiveprot"
+  [ 37.944593] systemd[1]: Failed to mount cgroup2 (type cgroup2) on /sys/fs/cgroup
+               (MS_NOSUID|MS_NODEV|MS_NOEXEC "nsdelegate,memory_recursiveprot"):
+               Invalid argument
+  [ 38.044365] systemd[1]: Freezing execution.
+
+`nsdelegate` is Linux 4.13 and `memory_recursiveprot` is Linux 5.7, and the cgroup2
+option parser rejects the entire string when it does not recognise one element, so
+4.9 fails both. The entry is MNT_FATAL, so mount_one() propagates and PID 1 calls
+freeze() -- 10.7s after the previous failure point, which is how we know 0006 works.
+
+systemd's own probe for this, mount_option_supported(), cannot answer here: it is
+built on fsopen()/fsconfig(), which is Linux 5.2, so it returns -ENOSYS and the
+caller assumes "not supported". That is why memory_hugetlb_accounting was already
+dropped and the other two were not -- they are prepended unconditionally rather
+than probed.
+
+Retry on failure rather than probe, so a kernel where the first mount succeeds is
+completely unaffected: nothing here runs unless the mount has already failed.
+cgroup2 itself is Linux 4.5, so the no-option mount is what an old kernel wants,
+and the options being dropped are delegation and recursive memory protection --
+neither of which the kernel understands, and so neither of which can be lost.
+
+--- a/src/shared/mount-setup.c
++++ b/src/shared/mount-setup.c
+@@ -325,6 +325,21 @@
+                 o = p->options;
+ 
+         r = mount_verbose_full(priority, p->what, p->where, p->type, p->flags, o, FLAGS_SET(p->mode, MNT_FOLLOW_SYMLINK));
++
++        /* The cgroup2 option string is assembled from nsdelegate (Linux 4.13) and
++         * memory_recursiveprot (Linux 5.7), and the kernel's parser rejects the whole string
++         * when it does not recognise one of them, so an older kernel fails on both. There is
++         * no probe available there either: mount_option_supported() is built on fsopen(),
++         * which is Linux 5.2, so it answers -ENOSYS. Retry without options -- cgroup2 itself
++         * is Linux 4.5. Only reached once the mount has already failed, so a kernel that
++         * accepts the options never takes this path. */
++        if (r == -EINVAL && streq(p->type, "cgroup2") && !isempty(o)) {
++                log_warning("Mounting cgroup2 with \"%s\" failed, retrying without mount options.", o);
++
++                r = mount_verbose_full(priority, p->what, p->where, p->type, p->flags, NULL,
++                                       FLAGS_SET(p->mode, MNT_FOLLOW_SYMLINK));
++        }
++
+         if (r < 0)
+                 return FLAGS_SET(p->mode, MNT_FATAL) ? r : 0;
+ 

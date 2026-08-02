@@ -14,4 +14,5 @@
   ./0004-systemd-uevent-no-synthetic-uuid.patch
   ./0005-systemd-block-sigchld-without-pidfd.patch
   ./0006-systemd-statx-sync-flags-and-mount-root.patch
+  ./0007-systemd-cgroup2-mount-option-fallback.patch
 ]
