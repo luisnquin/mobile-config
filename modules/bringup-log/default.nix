@@ -62,6 +62,18 @@ in
         seq=0
         i=0
 
+        # Invalidate both headers before writing anything. `seq` restarts at 1
+        # every boot, so without this the reader compares this boot's seq=1
+        # against the previous boot's seq=300 and returns the previous boot's
+        # log as the newer one -- silently, and with a plausible-looking uptime.
+        # A slot with no valid header reads as "stage-2 never got this far",
+        # which is the true statement.
+        for slot in ${toString layout.slotA} ${toString layout.slotB}; do
+          ${pkgs.coreutils}/bin/head -c 4096 /dev/zero \
+            | ${pkgs.coreutils}/bin/dd of="$dev" bs=4096 seek="$slot" \
+                conv=notrunc,fsync 2>/dev/null || true
+        done
+
         while [ $i -lt ${toString cfg.iterations} ]; do
           seq=$((seq + 1))
           if [ $((seq % 2)) -eq 1 ]; then
@@ -75,11 +87,11 @@ in
           bytes=$(${pkgs.coreutils}/bin/stat -c %s "$tmp" 2>/dev/null || echo 0)
           uptime=$(${pkgs.coreutils}/bin/cut -d' ' -f1 /proc/uptime 2>/dev/null || echo 0)
 
-          # Payload before header, for the same reason rewrite.sh writes chunk 0
-          # last: the header is what makes a slot readable, so it must not become
-          # valid until what it describes is already on flash. A power cut
-          # between the two writes leaves a stale-but-consistent slot rather
-          # than a header pointing at a half-written snapshot.
+          # Payload before header, for the same reason tools/deploy.sh writes
+          # chunk 0 last: the header is what makes a slot readable, so it must
+          # not become valid until what it describes is already on flash. A
+          # power cut between the two writes leaves a stale-but-consistent slot
+          # rather than a header pointing at a half-written snapshot.
           ${pkgs.coreutils}/bin/dd if="$tmp" of="$dev" bs=4096 \
             seek=$((slot + 1)) conv=notrunc,fsync 2>/dev/null || true
           ${pkgs.coreutils}/bin/printf '${layout.magic} seq=%d uptime=%s bytes=%d\n' \
