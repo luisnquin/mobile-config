@@ -9,10 +9,18 @@ finished.
 | Device | SoC | Kernel | State |
 |---|---|---|---|
 | [`xiaomi-dandelion`](devices/xiaomi-dandelion) — Redmi 9A, M2006C3LG | MT6762G (Helio G25) | downstream 4.9.190 | stage-1 only: console, backlight, adb, SSH. Stage-2 is written but has never booted |
+| [`huawei-marie`](devices/huawei-marie) — P30 Lite, MAR-LX3Bm / MAR-L03B | Kirin 710 | stock 4.14.116; build source under inspection | inventory and userspace skeleton only; locked bootloader and split Huawei boot layout block an image definition |
 
 Each device directory has its own README with the exact hardware tuple it was
 written against, what works, and how to flash it. Read that one before building
 anything.
+
+Research-only ports are exposed under `lib.deviceProfiles`, `lib.bootProfiles`,
+`lib.firmwareProfiles`, `lib.kernelProfiles`, and
+`lib.researchConfigurations`. They are deliberately absent from the build
+registry until their kernel, image geometry, partition target, and recovery
+path are proven. Verified source and firmware inputs may still be exposed as
+host-side audit packages.
 
 ## Sessions
 
