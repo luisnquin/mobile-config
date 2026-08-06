@@ -1,0 +1,27 @@
+From: Mobile NixOS porting work <noreply@example.invalid>
+Date: Wed, 5 Aug 2026 14:45:00 -0500
+Subject: [PATCH] selinux: ignore host PF_MAX when building policy tools
+
+genheaders and mdp are host utilities. Their class map describes the target
+4.14 kernel, but the compile-time guard reads PF_MAX from the host libc. Modern
+libc headers therefore reject this old source even though the target address
+families did not change.
+
+Drop the host-header guard. This does not alter the target class map.
+---
+ security/selinux/include/classmap.h | 4 ----
+ 1 file changed, 4 deletions(-)
+
+diff --git a/security/selinux/include/classmap.h b/security/selinux/include/classmap.h
+index 4d7e762..b9006ad 100644
+--- a/security/selinux/include/classmap.h
++++ b/security/selinux/include/classmap.h
+@@ -243,6 +243,2 @@ struct security_class_mapping secclass_map[] = {
+ 	{ NULL }
+   };
+-
+-#if PF_MAX > 44
+-#error New address family defined, please update secclass_map.
+-#endif
+-- 
+2.51.0
