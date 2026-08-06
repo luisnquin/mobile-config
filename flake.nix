@@ -24,6 +24,26 @@
         xiaomi-dandelion = ./devices/xiaomi-dandelion;
       };
 
+      deviceProfiles = {
+        huawei-marie = import ./devices/huawei-marie/profile.nix;
+      };
+
+      firmwareProfiles = {
+        huawei-marie = import ./devices/huawei-marie/firmware.nix;
+      };
+
+      bootProfiles = {
+        huawei-marie = import ./devices/huawei-marie/boot-contract.nix;
+      };
+
+      kernelProfiles = {
+        huawei-marie = import ./devices/huawei-marie/kernel/config-comparison.nix;
+      };
+
+      researchConfigurations = {
+        huawei-marie = ./devices/huawei-marie/configuration.nix;
+      };
+
       buildSystems = [
         "x86_64-linux"
         "aarch64-linux"
@@ -46,6 +66,70 @@
       # outputs once.
       toolsFor = system: import ./tools { pkgs = pkgsFor system; };
 
+      firmwareArtifactsFor =
+        system:
+        let
+          pkgs = pkgsFor system;
+        in
+        import ./devices/huawei-marie/firmware-packages.nix {
+          inherit (pkgs)
+            fetchurl
+            python3
+            runCommand
+            unzip
+            writeShellApplication
+            ;
+        };
+
+      huaweiSplitImagesFor =
+        system:
+        let
+          pkgs = pkgsFor system;
+        in
+        import ./devices/huawei-marie/split-images.nix {
+          inherit (pkgs)
+            coreutils
+            jq
+            lib
+            runCommand
+            ;
+        };
+
+      kernelArtifactsFor =
+        system:
+        let
+          pkgs = pkgsFor system;
+        in
+        import ./devices/huawei-marie/kernel/packages.nix {
+          inherit (pkgs)
+            bc
+            bison
+            clang
+            coreutils
+            cpio
+            fetchzip
+            fetchurl
+            file
+            findutils
+            flex
+            gnugrep
+            gnumake
+            gnutar
+            gzip
+            lib
+            openssl
+            patch
+            patchelf
+            perl
+            python3
+            rsync
+            runCommand
+            stdenv
+            which
+            zlib
+            ;
+        };
+
       # Android boot header v2 is not expressible upstream, and dandelion's
       # bootloader rejects v0 and v1. A patch fails loudly; an overlay would
       # silently no-op.
@@ -59,16 +143,21 @@
 
       # `system` must be explicit: Mobile NixOS otherwise falls back to
       # `builtins.currentSystem`, which pure flake evaluation forbids.
-      evalFor =
+      evalDeviceFor =
         system: device: configuration:
         import (mobileNixosFor system) {
           inherit system configuration;
-          device = devices.${device};
+          inherit device;
           # How non-flake sources reach a module's argument set.
           additionalConfiguration = {
             _module.args = { inherit sxmo-nix; };
           };
         };
+
+      evalFor = system: device: evalDeviceFor system devices.${device};
+
+      evalResearchFor =
+        system: device: evalDeviceFor system researchConfigurations.${device};
 
       outputsFor =
         system: device:
@@ -84,11 +173,27 @@
         };
     in
     {
-      lib = { inherit devices evalFor; };
+      lib = {
+        inherit
+          devices
+          bootProfiles
+          deviceProfiles
+          evalFor
+          evalResearchFor
+          firmwareArtifactsFor
+          firmwareProfiles
+          huaweiSplitImagesFor
+          kernelArtifactsFor
+          kernelProfiles
+          researchConfigurations
+          ;
+      };
 
       packages = forEachSystem (
         system:
-        builtins.foldl' (acc: device: acc // outputsFor system device) (toolsFor system) (
+        builtins.foldl' (acc: device: acc // outputsFor system device) (
+          toolsFor system // firmwareArtifactsFor system // kernelArtifactsFor system
+        ) (
           builtins.attrNames devices
         )
       );
@@ -112,8 +217,62 @@
         system:
         let
           pkgs = pkgsFor system;
+          huaweiMarie = evalResearchFor system "huawei-marie" { };
+          huaweiMarieBoot = bootProfiles.huawei-marie;
+          huaweiMarieFirmware = firmwareProfiles.huawei-marie;
+          huaweiMarieKernel = kernelProfiles.huawei-marie;
+          huaweiMarieSplitFixture = (huaweiSplitImagesFor system) {
+            kernel = pkgs.writeText "huawei-marie-split-fixture-kernel" "kernel";
+            ramdisk = pkgs.writeText "huawei-marie-split-fixture-ramdisk" "ramdisk";
+            kernelCapacityBytes = 1024;
+            ramdiskCapacityBytes = 1024;
+            kernelFormat = "raw-image.gz";
+            ramdiskFormat = "compressed-cpio";
+            ramdiskCompression = "gzip";
+            evidence = {
+              kernelCapacity = "synthetic evaluation fixture";
+              kernelFormat = "synthetic evaluation fixture";
+              ramdiskCapacity = "synthetic evaluation fixture";
+              ramdiskFormat = "synthetic evaluation fixture";
+            };
+          };
         in
         {
+          huawei-marie-research-eval =
+            assert huaweiMarie.config.mobile.device.supportLevel == "broken";
+            assert huaweiMarie.config.mobile.hardware.soc == "hisilicon-kirin710";
+            assert huaweiMarie.config.mobile.system.system == "aarch64-linux";
+            assert huaweiMarieFirmware.complete == false;
+            assert huaweiMarieFirmware.observed.base == "MAR-LGRP2-OVS 10.0.0.564";
+            assert huaweiMarieFirmware.artifacts.base.publicIndexAudit.exactMatch == false;
+            assert huaweiMarieFirmware.artifacts.base.publicIndexAudit.closestSameRegion.restoreCompatible == false;
+            assert huaweiMarieBoot.complete == false;
+            assert huaweiMarieBoot.mobileNixos.compatible == false;
+            assert huaweiMarieBoot.mobileNixos.initrdOutput.defaultCompression == "gzip";
+            assert huaweiMarieBoot.target.observedAliases.boot == "kernel";
+            assert huaweiMarieBoot.target.partitions.ramdisk.sizeKiB == 2 * 1024;
+            assert huaweiMarieBoot.sourceDeviceTree.deviceTree.generatedInputs.presentInArchive == false;
+            assert huaweiMarieBoot.sourceDeviceTree.deviceTree.exactMarTargetAvailable == false;
+            assert huaweiMarieBoot.researchLeads.communityRecovery.usableAsFlashContract == false;
+            assert huaweiMarieBoot.splitOutputScaffold.instantiated == false;
+            assert huaweiMarieBoot.splitOutputScaffold.includesFlashCommands == false;
+            assert builtins.isFunction (huaweiSplitImagesFor system);
+            assert huaweiMarieSplitFixture.contract.layout == "huawei-split";
+            assert huaweiMarieSplitFixture.contract.flashCommandsIncluded == false;
+            assert huaweiMarieKernel.observed.decompressedSha256 == "39e8fe7311c7af288e344fa1b98315597e57ca5fee3f1c250dc16b265a379bf3";
+            assert huaweiMarieKernel.sourceVsObserved.exact == false;
+            assert huaweiMarieKernel.buildFeasibility.exactStockEquivalentKernelReady == false;
+            pkgs.writeText "huawei-marie-research-eval.json" (
+              builtins.toJSON {
+                inherit (huaweiMarie.config.mobile.device) identity supportLevel;
+                inherit (huaweiMarie.config.mobile.hardware) ram screen soc;
+                inherit (huaweiMarie.config.mobile.system) system type;
+                firmware = huaweiMarieFirmware;
+                boot = huaweiMarieBoot;
+                kernel = huaweiMarieKernel;
+              }
+            );
+
           systemd-patches = pkgs.applyPatches {
             name = "systemd-linux-4.9-patches-apply";
             src = pkgs.systemd.src;
