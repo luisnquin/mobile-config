@@ -11,11 +11,33 @@
 #
 # So: a fixed offset inside the partition, past the end of any filesystem this
 # port puts there. p41 is 23782383 KiB (22.68 GiB) and the rootfs image is
-# ~3.0 GiB, so everything from 16 GiB on is space no filesystem will touch.
+# ~3.0 GiB (784879 blocks), which ends far below slotA.
 #
-# CONSTRAINT: growing the rootfs past 16 GiB would overwrite this. The deferred
-# "resize p41 to fill the partition" task must resize to 16 GiB, not to the
-# whole partition. That is the price of not depending on a filesystem.
+# CONSTRAINT: the filesystem must END before slotA, and "how full it is" is not
+# the test. ext4 lays block-group metadata at fixed positions across the whole
+# extent it was created with, regardless of fill level, so a 3 GiB-full but
+# 24 GiB-wide filesystem still owns block 4194304. That is not hypothetical: a
+# 5945595-block ext4 on p41 put group 128's block bitmap at exactly 4194304, its
+# inode bitmap at 4194305 and its inode table at 4194306-4194816, and the ring
+# wrote log text straight into the inode table -- e2fsck -fn reported illegal
+# blocks in inode 1047035 (group 128), the "block numbers" being ASCII read as
+# pointers (538976288 = 0x20202020, four spaces). It stayed survivable only
+# because group 128 was still INODE_UNINIT/BLOCK_UNINIT and unused.
+#
+# So never resize the rootfs to fill the partition. Deploying an image whose own
+# superblock ends below slotA is necessary but NOT sufficient, and believing it
+# was is how the 5945595-block filesystem above came to exist: the image written
+# to p41 was 784879 blocks and verified chunk by chunk, and the device still came
+# up 24 GiB wide. Mobile NixOS re-grows it from the initrd on every single boot
+# -- mobile-nixos/modules/rootfs.nix sets autoResize on "/", and
+# boot/init/lib/mounting.rb turns that into a Tasks::AutoResize dependency of the
+# root mount -- so the resize happens after the deploy, undoing it silently.
+#
+# ../../devices/xiaomi-dandelion/default.nix therefore turns autoResize off, and
+# that override is what actually holds this constraint. Verify with
+# `dumpe2fs -h <img> | grep 'Block count'` before deploying, and again on the
+# device after the first boot, because only the second reading can catch a
+# resize.
 rec {
   # 16 GiB, in 4096-byte blocks.
   slotA = 4194304;

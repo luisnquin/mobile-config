@@ -10,8 +10,10 @@
   imports = [
     ../../modules/soc/mt6765.nix
     ../../modules/systemd-linux-4.9.nix
+    ../../modules/iptables-linux-4.9.nix
     ../../modules/stage2-build-fixes.nix
     ../../modules/stage2-bringup.nix
+    ../../modules/avahi.nix
     ../../modules/bringup-log
     ../../modules/stage-1-ssh.nix
     ../../modules/session.nix
@@ -33,12 +35,21 @@
   mobile.session.sxmo.enable = true;
   mobile.session.graphical.autostart = true;
 
-  # Enrolled by hand. Wi-Fi on this device is still untested, so the daemon has
-  # no route out yet -- it will sit in NeedsLogin until one exists.
+  # Enrolled by hand, and only reachable through the cable: see viaHostGateway
+  # below. Wi-Fi on this device is still untested.
   mobile.services.tailscale.enable = true;
 
   # Until wifi works this is the only way to reach stage-2 over the network.
   mobile.services.usbNetwork.enable = true;
+
+  # The development machine is this device's uplink. It has to forward and
+  # masquerade 172.16.42.0/24 for the route to lead anywhere; that belongs in
+  # that machine's own configuration, not here.
+  mobile.services.usbNetwork.viaHostGateway = true;
+
+  # Publishes thompson.local on the cable, so nothing has to hardcode
+  # 172.16.42.1 -- including known_hosts entries.
+  mobile.services.avahi.enable = true;
 
   # Names this physical unit, not the port. A second Redmi 9A would get its own.
   networking.hostName = "thompson";
@@ -51,11 +62,16 @@
     manufacturer = "Xiaomi";
   };
 
-  # The rootfs is written and verified and stage-2 does start, but PID 1 has
-  # never reached a service manager: it froze in mount_setup() (see
-  # patches/systemd/0006-*.patch, which is the attempt to fix that and has not
-  # been tested on hardware yet). This stays "broken" until a boot reaches a
-  # login prompt.
+  # Stage-2 now boots clean: `systemctl is-system-running` answers "running"
+  # with zero failed units, across two consecutive boots. Every unit that used
+  # to die at step NAMESPACE against this kernel now starts -- see
+  # modules/systemd-linux-4.9.nix for the per-patch attempt log and the
+  # measurement behind each one.
+  #
+  # Still "broken", for what is untested rather than what is failing: nothing
+  # here has confirmed that the panel renders, that touch reports events, or
+  # that the modem answers. sxmo's start hook runs and DRM enumerates card0,
+  # which is not the same as a usable session.
   mobile.device.supportLevel = "broken";
 
   mobile.hardware = {
@@ -302,6 +318,63 @@
   mobile.bringup.rawLog = {
     enable = true;
     device = "/dev/mmcblk0p41";
+  };
+
+  # The ring above sits at a fixed offset inside p41, so the filesystem on p41
+  # must end before it. Deploying an image whose own superblock is small is not
+  # enough to arrange that, because the resize happens *after* the image is
+  # written, from the initrd: mobile-nixos/modules/rootfs.nix:119 sets
+  # autoResize on "/", and boot/init/lib/mounting.rb:70 turns that into a
+  # Tasks::AutoResize dependency of the root mount on every single boot.
+  #
+  # Measured: the 784879-block (3.0 GiB) image written to p41 and verified chunk
+  # by chunk came back up reporting 5945595 blocks, and at that width ext4 puts
+  # group 128's block bitmap on block 4194304 -- which is slotA exactly. The
+  # ring then writes log text into the inode table. See
+  # ../../modules/bringup-log/layout.nix for the fsck evidence.
+  #
+  # The double wrapping is load-bearing, and the obvious spelling is what breaks.
+  # rootfs.nix puts mkDefault around the *whole* "/" entry, so priority lives at
+  # the entry, not at its attributes. A plain `fileSystems."/".autoResize = false`
+  # arrives at priority 100 and filterOverrides then drops the 1000 definition
+  # entirely -- taking device and fsType with it, which fails evaluation with
+  # `The option fileSystems."/".fsType was accessed but has no value defined`.
+  # So match 1000 to keep both definitions alive through filterOverrides, and
+  # force only inside, where the two autoResize values actually meet.
+  fileSystems."/" = lib.mkDefault { autoResize = lib.mkForce false; };
+
+  # The other half of turning autoResize off, and it is not optional.
+  #
+  # mobile-nixos/modules/rootfs.nix:73 sizes the image at the closure plus
+  # `extraPadding`, 20 MiB, described there as "headroom for initial mounting".
+  # That is all upstream needs, because the resize disabled above is what was
+  # supposed to grow the filesystem out to fill the partition afterwards. With
+  # the resize gone the image width is final, so 20 MiB is the permanent free
+  # space of the running system. Measured on attempt 8: 3.0 G total, 2.9 G used,
+  # 77 M free, 98% -- with no room for a second system generation, which is what
+  # every `nixos-rebuild` needs and what makes rollback possible.
+  #
+  # 1 GiB rather than as much as fits. The ceiling is real -- the filesystem must
+  # still end before the log ring at block 4194304 -- but it is not the binding
+  # constraint here: the closure is about 3.0 GiB, so even this leaves roughly
+  # 12 GiB of the 16 unused. What binds is deploy time. tools/deploy.sh hashes
+  # every chunk on the device before deciding to write it, so the whole image is
+  # read back on each run whether or not it changed, and the transport tops out
+  # near 12.6 MB/s. Padding is paid on every single deploy, forever; take what is
+  # needed and no more.
+  # Double-wrapped for the same reason as the "/" entry above, and it fails the
+  # same way when spelled plainly. rootfs.nix wraps the whole
+  # `mobile.generatedFilesystems.rootfs` attrset in mkDefault, so a bare
+  # `...rootfs.extraPadding = lib.mkForce x` arrives at priority 50 and
+  # filterOverrides discards the 1000 definition wholesale -- label, filesystem
+  # and populateCommands with it. The symptom names none of that:
+  #
+  #   error: cannot coerce null to a string: null
+  #   … while evaluating the option `fileSystems."/".device'
+  #
+  # because the device is derived from the label that just vanished.
+  mobile.generatedFilesystems.rootfs = lib.mkDefault {
+    extraPadding = lib.mkForce (pkgs.image-builder.helpers.size.MiB 1024);
   };
 
   # Puts adbd in the initrd and adds "adb" to the gadget's function list; the
