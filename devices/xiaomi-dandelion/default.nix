@@ -20,6 +20,7 @@
     ../../modules/sxmo.nix
     ../../modules/tailscale.nix
     ../../modules/usb-network.nix
+    ../../modules/zram-linux-4.9.nix
     ./display.nix
   ];
 
@@ -32,7 +33,11 @@
   # occupied by the gadget that carries adb and ssh -- an OTG keyboard would
   # take the session's own lifeline. The tty1 guard in modules/sxmo.nix means
   # ssh still lands on a plain shell either way.
-  mobile.session.sxmo.enable = true;
+  #
+  # mkDefault so the headless arm in flake.nix can turn it off: the session
+  # closure is what makes a systemd patch cost hours, and none of it is on the
+  # path being debugged.
+  mobile.session.sxmo.enable = lib.mkDefault true;
   mobile.session.graphical.autostart = true;
 
   # Enrolled by hand, and only reachable through the cable: see viaHostGateway

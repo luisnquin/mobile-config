@@ -163,6 +163,13 @@
         system: device:
         let
           eval = evalFor system device { };
+
+          # The same device with no graphical session. Every systemd patch
+          # invalidates the whole closure below it, and with sxmo enabled that
+          # closure includes gtk4, gstreamer and the native halves of both --
+          # none of which is on the path anyone is debugging on a 4.9 kernel.
+          # Same kernel, same initrd, same patched systemd, same networking.
+          headless = evalFor system device { mobile.session.sxmo.enable = false; };
         in
         {
           "${device}-boot-img" = eval.outputs.android.android-bootimg;
@@ -170,6 +177,9 @@
           "${device}-fastboot-images" = eval.outputs.android.android-fastboot-images;
           "${device}-kernel" = eval.config.mobile.boot.stage-1.kernel.package;
           "${device}-system" = eval.config.system.build.toplevel;
+
+          "${device}-headless-fastboot-images" = headless.outputs.android.android-fastboot-images;
+          "${device}-headless-system" = headless.config.system.build.toplevel;
         };
     in
     {
