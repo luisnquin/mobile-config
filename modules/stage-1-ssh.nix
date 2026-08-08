@@ -31,6 +31,27 @@ in
     { object = authorizedKeysFile; symlink = "/etc/authorized_keys"; }
   ];
 
+  # This listener stops authenticating once stage-2 takes over, and that is not
+  # fixable from stage-2's side. The process survives switch_root, but its root
+  # directory keeps pointing at the initramfs, which stage-1 then empties:
+  #
+  #   # cat /proc/360/mountinfo | head -1
+  #   0 0 0:1 / / rw - rootfs rootfs rw          <- not the ext4 root PID 1 uses
+  #   # ls -la /proc/360/root/root/.ssh/
+  #   total 0                                     <- the keys written below, gone
+  #   # ls /proc/360/root/etc/passwd
+  #   No such file or directory
+  #
+  # So it offers publickey, rejects the correct key, and logs nothing: with no
+  # /etc/passwd, getpwnam("root") fails and there is no home directory left to
+  # search for authorized_keys. Writing keys into stage-2's /root/.ssh does not
+  # help, because that filesystem is not one this process can see.
+  #
+  # Port 2222 is therefore a stage-1 channel, and only that. Which port answers
+  # identifies the stage: 2222 alone means stage-1, both open means stage-2 is
+  # up and 22 is the one to use. Keeping the process alive is still worth it --
+  # it holds the gadget's network function open across the handover -- it just
+  # is not a rescue shell once stage-2 has its own sshd.
   mobile.boot.stage-1.tasks = [
     (pkgs.writeText "dropbear-pubkey-sshd-task.rb" ''
       class Tasks::DropbearPubkeySSHD < SingletonTask
@@ -50,7 +71,14 @@ in
           #     put a host private key in a world-readable /nix/store path.
           # -E  log to stderr, which is /dev/console, so failures land on the
           #     panel next to everything else.
-          System.spawn("dropbear", "-R", "-s", "-E")
+          # -p  NOT 22. Nothing stops this process at switch_root, so it keeps
+          #     running under stage-2 and holds whatever port it bound. On 22 it
+          #     starves the real sshd, which then dies on "Address already in
+          #     use" and burns through its start limit. Surviving is worth
+          #     keeping -- it leaves a rescue channel that does not depend on
+          #     adbd, which has wedged in ffs_epfile_io mid-transfer -- so move
+          #     it aside instead of killing it.
+          System.spawn("dropbear", "-R", "-s", "-E", "-p", "2222")
         end
 
         private
