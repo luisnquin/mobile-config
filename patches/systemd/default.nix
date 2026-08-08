@@ -15,4 +15,14 @@
   ./0005-systemd-block-sigchld-without-pidfd.patch
   ./0006-systemd-statx-sync-flags-and-mount-root.patch
   ./0007-systemd-cgroup2-mount-option-fallback.patch
+  ./0008-systemd-access-fd-proc-fallback.patch
+  ./0009-systemd-close-range-enosys-fallback.patch
+  ./0010-systemd-bound-fd-fallback-by-proc-self-fd.patch
+  ./0011-systemd-mnt-id-fdinfo-for-mandatory-mask.patch
+  ./0012-systemd-credentials-plain-dir-without-fsopen.patch
+  ./0013-systemd-mount-point-by-mnt-id.patch
+  ./0014-systemd-numeric-hidepid-fallback.patch
+  ./0015-systemd-seccomp-kill-process-degradation.patch
+  ./0016-systemd-nstype-by-nsfs-name.patch
+  ./0017-systemd-tmpfiles-mount-root-optional.patch
 ]

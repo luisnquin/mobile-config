@@ -1,0 +1,177 @@
+systemd: settle is_mount_point_at() with mount ids when st_dev cannot
+
+Patch 0006 already saw that STATX_ATTR_MOUNT_ROOT needs Linux 5.8 and gave
+is_mount_point_at() a fallback for when xstatx_full() answers -EUNATCH.  The
+fallback it chose was the pre-statx() test: compare an inode's st_dev against its
+parent's.  Its own comment names the limitation -- "this cannot see a bind mount
+that stays within one file system" -- and stage-2 attempt 7 walked into exactly
+that, plus a second limitation the comment does not mention.
+
+Attempt 7 is the first boot where 0010, 0011 and 0012 are all in the deployed
+build rather than swapped in over the latch.  It reaches "degraded" with 9 failed
+units and 20 remaining "Failed at step NAMESPACE".  Step FDS is at 0, step
+CREDENTIALS is at 0 and "does not support 'STATX_MNT_ID'" is at 0, so 0010, 0012
+and 0011 are each confirmed and what is left is a different cause.  With PID 1
+raised to debug via SIGRTMIN+22, 15 of the 20 state it:
+
+  dhcpcd.service: statx() does not support 'STATX_ATTR_MOUNT_ROOT' attribute (running on an old kernel?)
+  dhcpcd.service: Failed to determine whether /run/systemd/mount-rootfs/etc/resolv.conf is already a mount point: Protocol driver not attached
+
+/etc/resolv.conf is a regular file, and 0006's fallback opens with O_DIRECTORY,
+so it returns -ENOTDIR and 0006 re-raises the original -EUNATCH.  The other
+recurring path, /proc/sys/kernel/domainname from ProtectKernelTunables=, is a
+regular file too.  Lifting O_DIRECTORY on its own would not help: what
+namespace.c is asking about is a read-only bind mount of a file onto itself
+inside one file system, and st_dev is shared across such a mount, so the test
+would answer "not a mount point" with no way to tell that apart from a real
+answer.
+
+Mount ids do answer.  Every inode inside a mount carries that mount's id, so an
+inode's id differs from its parent directory's exactly when it is the root of a
+mount: it holds for any inode type and it sees a same-file-system bind mount.
+path_get_mnt_id_at() works on 4.9 because 0002 and 0011 already recover the
+old-style mount id from /proc/self/fdinfo when statx() reports none; without
+those two this patch would have nothing to stand on.
+
+That dependency is also why this does not simply replace 0006's test.  Reading
+the mount id means reading /proc/self/fdinfo, and mount_setup() -- the earliest
+caller, and the one whose failure froze PID 1 in stage-2 attempt 1 -- asks
+whether /proc is a mount point before mounting /proc.  So the order is: st_dev
+first, because it needs nothing but fstatat() and a positive from it is
+definitive, since crossing st_dev means crossing a mount; mount ids second, for
+the cases where st_dev returned a negative that is really an "I cannot tell";
+and if neither can answer, the first test's error is returned unchanged, so a
+caller keying on -ENOENT -- namespace.c does, for its ignore-missing entries --
+still sees it.  Boots that never reach the new code path behave exactly as they
+did under 0006.
+
+The parent is taken off the path fd_get_path() reads back, not off the caller's
+path.  That settles AT_SYMLINK_FOLLOW once, at the open, and what comes back
+carries no symlinks any more, so resolving the parent cannot land on a different
+inode than the one just measured.  "/" is answered directly, since it has no
+parent to compare against and is always a mount root.
+
+Upstream is unlikely to take this, for the same reason 0002 and 0011 will not be
+taken: systemd's baseline is far above 4.9.
+
+--- a/src/basic/mountpoint-util.c
++++ b/src/basic/mountpoint-util.c
+@@ -239,13 +239,16 @@
+         return TAKE_PTR(fh_copy);
+ }
+ 
+-static int is_mount_root_by_parent(int dir_fd, const char *path, int flags) {
++static int is_mount_root_by_stdev(int dir_fd, const char *path, int flags) {
+ 
+         /* STATX_ATTR_MOUNT_ROOT needs Linux 5.8. Below that the attribute is simply never reported, so
+          * xstatx_full() gives up with -EUNATCH and every caller sees a hard error. Fall back to the test
+          * systemd itself used before statx() existed: a directory is the root of a mount if its st_dev
+-         * differs from its parent's, or if it is its own parent. This cannot see a bind mount that stays
+-         * within one file system, which is why it stays a fallback and not the primary path. */
++         * differs from its parent's, or if it is its own parent.
++         *
++         * A positive from this is definitive -- crossing st_dev means crossing a mount -- and it needs
++         * nothing but fstatat(), which is why it stays first. A negative is not definitive, and
++         * is_mount_root_by_parent() below carries on for that case. */
+ 
+         _cleanup_close_ int fd = -EBADF;
+         struct stat a, b;
+@@ -268,6 +271,86 @@
+                 return true;
+ 
+         return a.st_ino == b.st_ino;
++}
++
++static int is_mount_root_by_mnt_id(int dir_fd, const char *path, int flags) {
++
++        /* Compares the mount id of an inode against the mount id of its parent directory. Every inode
++         * inside a mount carries that mount's id, so the two differ exactly when the inode is the root of a
++         * mount -- which is the question being asked, holds for any inode type, and unlike st_dev sees a
++         * bind mount that stays inside one file system.
++         *
++         * path_get_mnt_id_at() can answer on this kernel because 0002 and 0011 recover the old-style mount
++         * id from /proc/self/fdinfo when statx() reports none. That is also this test's one cost: it needs
++         * /proc, and mount_setup() asks about /proc before mounting it. Hence it runs second, after the
++         * st_dev test that needs nothing, and a failure here is not an answer. */
++
++        _cleanup_close_ int opened = -EBADF;
++        _cleanup_free_ char *resolved = NULL, *parent = NULL;
++        int r, fd, mnt_id, parent_mnt_id;
++
++        assert(wildcard_fd_is_valid(dir_fd));
++
++        if (isempty(path)) {
++                /* No path to name a parent from, and no fd to read one out of either. A caller that gets
++                 * here with AT_FDCWD or XAT_FDROOT and no path is already answered by the shortcuts at the
++                 * top of is_mount_point_at(). */
++                if (dir_fd < 0)
++                        return -EUNATCH;
++
++                fd = dir_fd;
++        } else {
++                opened = xopenat(dir_fd, path,
++                                 O_PATH|O_CLOEXEC|(FLAGS_SET(flags, AT_SYMLINK_FOLLOW) ? 0 : O_NOFOLLOW));
++                if (opened < 0)
++                        return opened;
++
++                fd = opened;
++        }
++
++        /* Take the parent off the path the kernel resolved to, rather than off the caller's. That settles
++         * AT_SYMLINK_FOLLOW once, and what comes back carries no symlinks any more, so resolving the parent
++         * with AT_SYMLINK_NOFOLLOW below cannot land on a different inode than the one just measured. */
++        r = fd_get_path(fd, &resolved);
++        if (r < 0)
++                return r;
++
++        if (path_equal(resolved, "/"))
++                return true;
++
++        r = path_extract_directory(resolved, &parent);
++        if (r < 0)
++                return r;
++
++        r = path_get_mnt_id_at(fd, NULL, &mnt_id);
++        if (r < 0)
++                return r;
++
++        r = path_get_mnt_id_at(AT_FDCWD, parent, &parent_mnt_id);
++        if (r < 0)
++                return r;
++
++        return mnt_id != parent_mnt_id;
++}
++
++static int is_mount_root_by_parent(int dir_fd, const char *path, int flags) {
++        int r, q;
++
++        /* Cheapest first, and the only one that works before /proc is mounted. */
++        r = is_mount_root_by_stdev(dir_fd, path, flags);
++        if (r > 0)
++                return r;
++
++        /* Everything else is inconclusive rather than negative: st_dev is shared across a bind mount that
++         * stays inside one file system, and -ENOTDIR only says the test could not look at a non-directory.
++         * Both are what the units on this port hit, so ask the mount ids before believing the answer. */
++        q = is_mount_root_by_mnt_id(dir_fd, path, flags);
++        if (q >= 0)
++                return q;
++
++        /* The mount ids could not answer either. Report what the first test said, errno and all, so that a
++         * caller keying on -ENOENT -- namespace.c does, for its ignore-missing entries -- still sees it. */
++        return r;
+ }
+ 
+ int is_mount_point_at(int dir_fd, const char *path, int flags) {
+@@ -294,8 +377,9 @@
+                         &sx);
+         if (r == -EUNATCH) {
+                 /* Kernel too old to report STATX_ATTR_MOUNT_ROOT. Only take the parent comparison when it
+-                 * can actually answer -- it needs a directory -- and otherwise report the original
+-                 * error, rather than claiming something is not a mount point when we simply cannot tell. */
++                 * can actually answer -- -ENOTDIR now means neither the st_dev nor the mount id test could
++                 * look -- and otherwise report the original error, rather than claiming something is not a
++                 * mount point when we simply cannot tell. */
+                 r = is_mount_root_by_parent(dir_fd, path, flags);
+                 if (r != -ENOTDIR)
+                         return r;

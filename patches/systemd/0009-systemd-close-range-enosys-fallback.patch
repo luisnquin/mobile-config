@@ -1,0 +1,101 @@
+systemd: fall back to the frugal fd loop when close_range is missing
+
+With 0008 applied the port reaches multi-user for the first time. Measured on
+dandelion (Linux 4.9.190), stage-2 boot of 2026-08-07, read out of the raw log
+ring:
+
+  [ 364.120737] systemd[1]: Reached target Login Prompts.
+  [ 390.596637] systemd[1]: Reached target Multi-User System.
+  [ 390.629646] systemd[1]: Startup finished in 34.899s (kernel) +
+                5min 55.724s (userspace) = 6min 30.624s.
+
+No unit ever ran. Every service died between fork() and exec(), 728 times over
+the 12 minutes the ring covers:
+
+  Failed to close unwanted file descriptors: Function not implemented
+  Failed at step FDS spawning .../tailscaled: Function not implemented
+  Failed at step FDS spawning .../sshd: Function not implemented
+  Failed at step FDS spawning .../systemd-logind: Function not implemented
+  Failed at step FDS spawning .../getty: Function not implemented
+
+The counts are restart loops rather than distinct faults -- dnsmasq alone failed
+138 times -- and getty is among the casualties, which is why the device reaches
+Login Prompts and still offers no way in.
+
+exec-invoke.c calls close_all_fds() to sanitise the fd table before exec. That
+lands in close_all_fds_special_case(), and both it and the sorted loop in
+close_all_fds() drive close_range(), which is Linux 5.9. On this kernel the
+syscall answers ENOSYS and all three call sites turn that straight into -errno.
+
+systemd already carries the fallback this needs: close_all_fds_frugal() walks the
+fd table with close_nointr() and never calls close_range(). close_all_fds() and
+close_all_fds_without_malloc() both route to it when the special case reports
+"not handled" by returning 0, and it is documented as safe in signal handler
+context, so it is safe between fork() and exec() as well.
+
+So report ENOSYS from the special case as "not special cased" rather than as a
+failure, and fall back to the frugal loop directly from the sorted path. Any
+other errno keeps propagating. A kernel with close_range() never reaches the
+added code, and the fallback costs one pass over the fd table -- bounded by
+MAX_FD_LOOP_LIMIT, which frugal already enforces.
+
+--- a/src/basic/fd-util.c
++++ b/src/basic/fd-util.c
+@@ -303,20 +303,23 @@
+ 
+         case 0:
+                 /* Close everything. Yay! */
+-                if (close_range(3, INT_MAX, 0) < 0)
+-                        return -errno;
++                if (close_range(3, INT_MAX, 0) < 0)
++                        /* close_range() is Linux 5.9. Answering 0 here means "not special cased",
++                         * which sends the caller to close_all_fds_frugal() -- the fallback that is
++                         * already there for the cases this one cannot optimize. */
++                        return errno == ENOSYS ? 0 : -errno;
+ 
+                 return 1;
+ 
+         case 1:
+                 /* Close all but exactly one, then we don't need no sorting. This is a pretty common
+                  * case, hence let's handle it specially. */
+ 
+-                if (except[0] > 3 && close_range(3, except[0] - 1, 0) < 0)
+-                        return -errno;
++                if (except[0] > 3 && close_range(3, except[0] - 1, 0) < 0)
++                        return errno == ENOSYS ? 0 : -errno;
+ 
+-                if (except[0] < INT_MAX && close_range(MAX(3, except[0] + 1), -1, 0) < 0)
+-                        return -errno;
++                if (except[0] < INT_MAX && close_range(MAX(3, except[0] + 1), -1, 0) < 0)
++                        return errno == ENOSYS ? 0 : -errno;
+ 
+                 return 1;
+ 
+@@ -391,8 +394,11 @@
+                         continue;
+ 
+                 /* Close everything between the start and end fds (both of which shall stay open) */
+-                if (close_range(start + 1, end - 1, 0) < 0)
+-                        return -errno;
++                if (close_range(start + 1, end - 1, 0) < 0) {
++                        if (errno == ENOSYS)
++                                return close_all_fds_frugal(except, n_except);
++                        return -errno;
++                }
+         }
+ 
+         /* The loop succeeded. Let's now close everything beyond the end */
+@@ -400,8 +406,11 @@
+         if (sorted[n_sorted-1] >= INT_MAX) /* Dont let the addition below overflow */
+                 return 0;
+ 
+-        if (close_range(sorted[n_sorted-1] + 1, INT_MAX, 0) < 0)
+-                return -errno;
++        if (close_range(sorted[n_sorted-1] + 1, INT_MAX, 0) < 0) {
++                if (errno == ENOSYS)
++                        return close_all_fds_frugal(except, n_except);
++                return -errno;
++        }
+ 
+         return 0;
+ }

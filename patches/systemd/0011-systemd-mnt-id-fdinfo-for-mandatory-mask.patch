@@ -1,0 +1,96 @@
+systemd: recover the mount id from fdinfo for mandatory STATX_MNT_ID too
+
+Patch 0002 taught xstatx_full() to read the old-style mount id out of
+/proc/self/fdinfo when statx() does not report one, but wired it into a single
+branch: the one guarded by XSTATX_MNT_ID_BEST.  A caller that names STATX_MNT_ID
+in its own mandatory_mask never reaches that branch, so it still falls through to
+the mandatory-mask check and returns -EUNATCH.  fds_inode_and_mount_same() is
+exactly such a caller -- it asks for STATX_TYPE|STATX_INO|STATX_MNT_ID -- and
+fd_is_root() calls it, which puts it on the path of every chase().
+
+Stage-2 attempt 6, the first boot with 0010 in place, reached "degraded" with 23
+failed units: journald and its four sockets, udevd and its three, the four
+tmpfiles units, sysctl, logind, journal-flush, timesyncd, logrotate, dhcpcd,
+dnsmasq, nscd, firewall, sshd and getty@tty1.  adbd, tailscaled and fb-refresher
+ran, which is what confirmed 0010: units exec now, they die later.
+
+Every one of them dies at step NAMESPACE with "Protocol driver not attached".
+logrotate was restarted by hand after SIGRTMIN+22 raised PID 1 to debug, and the
+debug level is where the cause is stated outright:
+
+  logrotate.service: statx() does not support 'STATX_MNT_ID' mask (running on an old kernel?)
+  logrotate.service: Failed to chase symlinks '/run/systemd/mount-rootfs/boot': Protocol driver not attached
+  logrotate.service: Failed to set up mount namespacing: /boot: Protocol driver not attached
+  logrotate.service: Failed at step NAMESPACE spawning .../bin/logrotate: Protocol driver not attached
+
+That names stat-util.c's mandatory-mask check, not the STATX_ATTR_MOUNT_ROOT
+fallback 0006 added -- the same run reports the identical error for '/' and for
+/etc/resolv.conf, so it is not about the path being a directory or not, and
+/boot does not exist on this device at all.  The earlier "Failed to look up shell
+'/run/current-system/sw/bin/bash': Protocol driver not attached" is the same
+chase() failing on a different path.
+
+The recovery 0002 added does work on this kernel; it was simply not consulted.
+Measured on the device, on 4.9.190, for both a regular file and a directory:
+
+  $ exec 9< /etc/resolv.conf; cat /proc/self/fdinfo/9
+  pos:	0
+  flags:	0400000
+  mnt_id:	29
+
+So the fix is to key the fallback off request_mask rather than off
+XSTATX_MNT_ID_BEST.  request_mask is mandatory_mask|optional_mask plus the mount
+id bits that XSTATX_MNT_ID_BEST adds, and the assertion at the top of the
+function forbids a caller from setting the flag and the bits together, so testing
+it covers both callers with one condition and changes nothing for the
+XSTATX_MNT_ID_BEST path.
+
+Two things are deliberately not done.  STATX_MNT_ID_UNIQUE is not satisfied from
+fdinfo: that field is the 64-bit id from Linux 6.8 and fdinfo carries the
+old-style one, which the kernel reuses, so answering with it would let two
+distinct mounts compare equal in statx_mount_same().  And a caller that asked for
+the mount id only in optional_mask no longer gets a hard error when fdinfo cannot
+supply it either -- xstatx_full() already reports unmet optional masks through its
+return value, and turning that into -EUNATCH would be a behaviour change beyond
+what this kernel needs.
+
+Upstream is unlikely to take this, for the same reason 0002 will not be taken:
+systemd's baseline is far above 4.9.
+
+--- a/src/basic/stat-util.c
++++ b/src/basic/stat-util.c
+@@ -505,18 +505,29 @@
+                         return negative_errno();
+         }
+ 
+-        if (FLAGS_SET(xstatx_flags, XSTATX_MNT_ID_BEST) &&
++        /* The fdinfo recovery has to cover callers that name STATX_MNT_ID in a mask of their own, not just
++         * XSTATX_MNT_ID_BEST: fds_inode_and_mount_same() asks for STATX_TYPE|STATX_INO|STATX_MNT_ID as
++         * mandatory, and every chase() reaches it through fd_is_root(). request_mask carries the bit in
++         * both cases -- XSTATX_MNT_ID_BEST adds it above, and the assertion at the top forbids a caller
++         * from setting both. STATX_MNT_ID_UNIQUE is deliberately left uncovered: fdinfo reports the
++         * old-style id, which the kernel reuses, so passing it off as the unique id would make two
++         * distinct mounts compare equal. */
++        if (FLAGS_SET(request_mask, STATX_MNT_ID) &&
+             !(sx.stx_mask & (STATX_MNT_ID|STATX_MNT_ID_UNIQUE))) {
+                 uint64_t mnt_id;
+ 
+                 r = mnt_id_from_fdinfo(fd, path, statx_flags, &mnt_id);
+                 if (r < 0) {
+                         log_debug_errno(r, "statx() returned neither STATX_MNT_ID nor STATX_MNT_ID_UNIQUE, and /proc/self/fdinfo carries no mount id either: %m");
+-                        return -EUNATCH;
+-                }
+ 
+-                sx.stx_mnt_id = mnt_id;
+-                sx.stx_mask |= STATX_MNT_ID;
++                        /* Only a caller that actually requires the mount id gets a hard error. When it was
++                         * optional, fall through and let the return value report it as unmet. */
++                        if (FLAGS_SET(xstatx_flags, XSTATX_MNT_ID_BEST) || FLAGS_SET(mandatory_mask, STATX_MNT_ID))
++                                return -EUNATCH;
++                } else {
++                        sx.stx_mnt_id = mnt_id;
++                        sx.stx_mask |= STATX_MNT_ID;
++                }
+         }
+ 
+         if (!FLAGS_SET(sx.stx_mask, mandatory_mask)) {

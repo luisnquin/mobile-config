@@ -1,0 +1,73 @@
+systemd: fall back to /proc when faccessat cannot take AT_EMPTY_PATH
+
+With 0007 applied, PID 1 mounts cgroup2, prints its version banner for the first
+time on this device and gets as far as setting the hostname before dying.
+Measured on dandelion (Linux 4.9.190), stage-2 boot of 2026-08-06, read out of
+the raw log ring:
+
+  [ 30.357571] systemd[1]: Mounting cgroup2 with
+               "nsdelegate,memory_recursiveprot" failed, retrying without
+               mount options.
+  [ 30.755152] systemd[1]: systemd 261 running in system mode
+  [ 30.822073] systemd[1]: Detected architecture arm64.
+  [ 30.822552] systemd[1]: Detected first boot.
+  [ 30.980940] systemd[1]: Hostname set to <thompson>.
+  [ 31.031544] systemd[1]: Failed to allocate manager object: Invalid argument
+  [ 31.114951] systemd[1]: Freezing execution.
+
+That 0007 works is the first half of the evidence: mount_setup() completed and
+manager_new() is a later caller entirely.
+
+The failure is manager_new() -> pin_callout_binary() -> find_executable_full() ->
+open_and_check_executable() -> access_fd(), which calls
+
+    faccessat(fd, "", mode, AT_EMPTY_PATH)
+
+faccessat2() is Linux 5.8. Where it is missing the syscall answers -ENOSYS, and
+glibc falls back to emulating the four-argument faccessat() in userspace -- an
+emulation that rejects every flag outside AT_SYMLINK_NOFOLLOW and AT_EACCESS
+with -EINVAL, AT_EMPTY_PATH among them. So the error does not mean "the mode is
+wrong", it means "the libc could not ask the kernel". Nothing between
+open_and_check_executable() and main.c looks at -EINVAL, and the message is
+emitted by log_debug_errno(), so at the default log level the freeze arrives
+with no indication of which step produced it.
+
+Note the caller already handles the case where this check cannot be performed:
+
+    r = access_fd(fd, X_OK);
+    if (r == -ENOSYS)
+            /* /proc/ is not mounted. Fall back to access(). */
+
+so /proc/ is the route it expects, and -ENOSYS is the signal it understands.
+This patch takes that route on -EINVAL as well, and reports -ENOSYS when /proc/
+turns out not to be mounted after all, so the existing fallback still fires.
+
+Retry rather than probe, and only after a failure, so a kernel with faccessat2()
+never reaches the added code. Compare fchmodat() a few functions above in the
+same file, which already treats an EINVAL from glibc's flag validation as
+"glibc too old?" and falls through to the raw syscall -- the shape here is that
+one, with /proc/ standing in for the syscall that does not exist yet.
+
+--- a/src/basic/fs-util.c
++++ b/src/basic/fs-util.c
+@@ -372,4 +372,18 @@
+         assert(fd >= 0);
+ 
+-        return RET_NERRNO(faccessat(fd, "", mode, AT_EMPTY_PATH));
++        int r = RET_NERRNO(faccessat(fd, "", mode, AT_EMPTY_PATH));
++        if (r != -EINVAL)
++                return r;
++
++        /* faccessat2() is Linux 5.8. Without it glibc emulates the four-argument
++         * faccessat() in userspace and rejects any flag outside AT_SYMLINK_NOFOLLOW and
++         * AT_EACCESS with -EINVAL, AT_EMPTY_PATH included -- so this is "the libc could
++         * not ask", not "the mode is wrong". Go through /proc/ instead, which is the
++         * route the callers already assume exists when they special-case -ENOSYS, and
++         * answer -ENOSYS if it turns out not to be mounted so that fallback still runs. */
++        r = RET_NERRNO(access(FORMAT_PROC_FD_PATH(fd), mode));
++        if (r == -ENOENT && proc_mounted() == 0)
++                return -ENOSYS;
++
++        return r;
+ }
+ 

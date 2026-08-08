@@ -1,0 +1,103 @@
+systemd: degrade SCMP_ACT_KILL_PROCESS to SCMP_ACT_KILL below libseccomp API 3
+
+Stage-2 attempt 8 is the first boot that reaches a usable system: 4 failed units
+instead of attempt 7's 9, step NAMESPACE down from 20 to 0, and getty and adbd
+both up.  dhcpcd.service is one of the four that remain, and it is the only one
+that fails for this reason:
+
+  dhcpcd.service: Main process exited, code=exited, status=228/SECCOMP
+
+228 is EXIT_SECCOMP, so the unit never ran at all -- seccomp_load() failed and
+the child bailed before exec.  SCMP_ACT_KILL_PROCESS is SECCOMP_RET_KILL_PROCESS
+in the kernel, which is Linux 4.14 and later.  This kernel is 4.9.190, so
+/proc/sys/kernel/seccomp/actions_avail does not exist, libseccomp cannot find the
+action listed as supported, and the whole filter is rejected.
+
+systemd used to handle exactly this.  scmp_act_kill_process() sat in
+seccomp-util.c and returned SCMP_ACT_KILL when the API level was too low; it was
+dropped once the minimum supported kernel moved past 4.14.  This restores it and
+puts the two remaining callers back on it.
+
+Note dhcpcd's unit does not ask to be killed.  It sets SystemCallFilter= without
+SystemCallErrorNumber=, and src/core/execute.c initialises .syscall_errno to
+SECCOMP_ERROR_NUMBER_KILL, so the kill action is systemd's default for any unit
+that filters syscalls without naming an errno.  This was confirmed on the device
+by bisecting with systemd-run: a transient unit with SystemCallFilter=@system-service
+and no SystemCallErrorNumber= fails 228 identically, and the same unit with
+SystemCallErrorNumber=EPERM starts.  dhcpcd is simply the only unit in this
+system's closure that takes the default -- journald, udevd, logind and timesyncd
+all set errno=1 -- which is why one service and not twenty is affected.
+
+The degradation is not lossless: SCMP_ACT_KILL is SECCOMP_RET_KILL_THREAD, so a
+violating thread dies rather than the process.  That is what every systemd before
+the removal did on kernels this old, and it is strictly better than a filter that
+does not load, which leaves the unit dead and unsandboxed.
+
+dlopen_libseccomp() is called from inside the helper rather than assumed: the
+exec-invoke.c caller runs before any other seccomp entry point has dlopen'd the
+library, so sym_seccomp_api_get would still be NULL there.  It is idempotent, and
+a failure to load means seccomp is unusable anyway, so that path answers with the
+conservative action.
+--- a/src/shared/seccomp-util.h
++++ b/src/shared/seccomp-util.h
+@@ -28,6 +28,8 @@
+ DECLARE_STRING_TABLE_LOOKUP_TO_STRING(seccomp_arch, uint32_t);
+ int seccomp_arch_from_string(const char *n, uint32_t *ret);
+ 
++uint32_t scmp_act_kill_process(void);
++
+ int seccomp_init_for_arch(scmp_filter_ctx *ret, uint32_t arch, uint32_t default_action);
+ 
+ bool is_seccomp_available(void);
+--- a/src/shared/seccomp-util.c
++++ b/src/shared/seccomp-util.c
+@@ -1201,6 +1201,28 @@
+         return 0;
+ }
+ 
++uint32_t scmp_act_kill_process(void) {
++
++        /* SCMP_ACT_KILL_PROCESS needs libseccomp 2.4.0 on the userspace side and
++         * SECCOMP_RET_KILL_PROCESS in the kernel, which arrived in 4.14.  libseccomp reports both
++         * through its API level: level 3 is defined as the level at which SECCOMP_RET_LOG and
++         * SECCOMP_RET_KILL_PROCESS are usable, and seccomp_api_get() probes the running kernel
++         * rather than reporting a build-time constant.
++         *
++         * Below that, fall back to SCMP_ACT_KILL, which is SECCOMP_RET_KILL_THREAD and has been
++         * there since 3.5.  The difference is which of the two the kernel tears down on a
++         * violation, the thread or the whole process; for a filter that is meant to be fatal
++         * either is a defensible answer, and it is the only one available here. */
++
++        if (dlopen_libseccomp(LOG_DEBUG) < 0)
++                return SCMP_ACT_KILL;
++
++        if (sym_seccomp_api_get() >= 3)
++                return SCMP_ACT_KILL_PROCESS;
++
++        return SCMP_ACT_KILL;
++}
++
+ int seccomp_load_syscall_filter_set_raw(uint32_t default_action, Hashmap* filter, uint32_t action, bool log_missing) {
+         uint32_t arch, default_action_override;
+         int r;
+@@ -1233,7 +1255,7 @@
+                         int error = PTR_TO_INT(val);
+ 
+                         if (error == SECCOMP_ERROR_NUMBER_KILL)
+-                                a = SCMP_ACT_KILL_PROCESS;
++                                a = scmp_act_kill_process();
+                         else if (action == SCMP_ACT_LOG)
+                                 a = SCMP_ACT_LOG;
+                         else if (error >= 0)
+--- a/src/core/exec-invoke.c
++++ b/src/core/exec-invoke.c
+@@ -1628,7 +1628,7 @@
+         if (skip_seccomp_unavailable("SystemCallFilter="))
+                 return 0;
+ 
+-        negative_action = c->syscall_errno == SECCOMP_ERROR_NUMBER_KILL ? SCMP_ACT_KILL_PROCESS : SCMP_ACT_ERRNO(c->syscall_errno);
++        negative_action = c->syscall_errno == SECCOMP_ERROR_NUMBER_KILL ? scmp_act_kill_process() : SCMP_ACT_ERRNO(c->syscall_errno);
+ 
+         if (c->syscall_allow_list) {
+                 default_action = negative_action;
+

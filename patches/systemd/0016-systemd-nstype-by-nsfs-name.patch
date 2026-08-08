@@ -1,0 +1,120 @@
+systemd: recover a namespace fd's type from its nsfs name when NS_GET_NSTYPE is missing
+
+systemd-machine-id-commit.service is one of the units still failing after
+attempt 8.  It exits 1, and running its ExecStart by hand with
+SYSTEMD_LOG_LEVEL=debug names the cause exactly:
+
+  # SYSTEMD_LOG_LEVEL=debug systemd-machine-id-setup --commit
+  Unmounting '/etc/machine-id'...
+  Failed to switch back to initial mount namespace: Inappropriate ioctl for device
+  We'll keep transient /etc/machine-id file until next reboot.
+
+"Inappropriate ioctl for device" is ENOTTY.  machine_id_commit() does its work
+inside a private mount namespace and then calls namespace_enter() to return to
+the original one; that path reaches is_our_namespace() and then
+fd_is_namespace(), which identifies an fd in two steps.  The first,
+fd_is_fs_type(fd, NSFS_MAGIC), works here.  The second is
+ioctl(fd, NS_GET_NSTYPE), and that ioctl is Linux 4.11 and later.  This kernel
+is 4.9.190, so it answers ENOTTY and the commit is abandoned.
+
+The consequence is quiet, which is why it is worth spelling out: the tool still
+exits 0, only the unit fails, and /etc/machine-id stays a tmpfs bind mount.  The
+machine id is therefore regenerated on every single boot.  Anything keyed to it
+-- journal namespacing, systemd-random-seed credit, and anything that later
+wants a stable identity for this device -- silently gets a new identity each
+time, with no error to point at.
+
+The type is recoverable without the ioctl.  nsfs names its inodes
+"<type>:[<inode>]", the same strings namespace_info[].proc_name already holds,
+and it has done so since namespaces were first exposed under /proc/$PID/ns --
+long before NS_GET_NSTYPE existed.  Confirmed on the device:
+
+  # for n in mnt pid net user uts ipc; do printf "%-6s -> " $n; readlink /proc/self/ns/$n; done
+  mnt    -> mnt:[4026531840]
+  pid    -> pid:[4026531836]
+  net    -> net:[4026531910]
+  user   -> user:[4026531837]
+  uts    -> uts:[4026531838]
+  ipc    -> ipc:[4026531839]
+
+and through an fd, which is the shape fd_is_namespace() actually has:
+
+  # sh -c 'exec 9</proc/self/ns/mnt; readlink /proc/self/fd/9'
+  mnt:[4026531840]
+
+This is the same move patch 0011 made for mount ids: when the new dedicated
+interface is absent, read the answer out of procfs, which has carried it all
+along.
+
+Only the ENOTTY path changes.  ERRNO_IS_IOCTL_NOT_SUPPORTED() rather than a bare
+ENOTTY comparison because it is what systemd already uses for unsupported
+ioctls, and it also covers the EINVAL that some kernels return instead.  A
+kernel with the ioctl never reaches the fallback, and any other ioctl error is
+still propagated.  fd_is_fs_type() has already established the fd is nsfs before
+either path runs, so a name that does not match the requested type means the
+wrong namespace type, not a bad fd -- which is the false that fd_is_namespace()
+already returns for that case.
+--- a/src/basic/namespace-util.c
++++ b/src/basic/namespace-util.c
+@@ -13,6 +13,7 @@
+ #include "errno-util.h"
+ #include "fd-util.h"
+ #include "fileio.h"
++#include "fs-util.h"
+ #include "log.h"
+ #include "mountpoint-util.h"
+ #include "namespace-util.h"
+@@ -22,6 +23,7 @@
+ #include "process-util.h"
+ #include "stat-util.h"
+ #include "stdio-util.h"
++#include "string-util.h"
+ #include "uid-range.h"
+ #include "unaligned.h"
+ #include "user-util.h"
+@@ -329,6 +331,30 @@
+         return 0;
+ }
+ 
++static int fd_is_namespace_by_name(int fd, NamespaceType type) {
++        _cleanup_free_ char *name = NULL;
++        int r;
++
++        assert(fd >= 0);
++        assert(type >= 0 && type < _NAMESPACE_TYPE_MAX);
++
++        /* Fallback for NS_GET_NSTYPE, which is Linux 4.11 and later.  nsfs names every inode it
++         * hands out "<type>:[<inode>]", and those type strings are exactly the proc_name field of
++         * namespace_info[].  That naming predates the ioctl -- it is how /proc/$PID/ns entries have
++         * read since namespaces were first exposed -- so reading the link back recovers the answer
++         * the ioctl would have given, without asking the kernel for anything it does not have. */
++
++        r = readlink_malloc(FORMAT_PROC_FD_PATH(fd), &name);
++        if (r < 0)
++                return r;
++
++        const char *rest = startswith(name, namespace_info[type].proc_name);
++        if (!rest)
++                return false; /* nsfs, but some other namespace type */
++
++        return rest[0] == ':';
++}
++
+ int fd_is_namespace(int fd, NamespaceType type) {
+         int r;
+ 
+@@ -345,8 +371,12 @@
+                 return true;
+ 
+         int clone_flag = ioctl(fd, NS_GET_NSTYPE);
+-        if (clone_flag < 0)
++        if (clone_flag < 0) {
++                if (ERRNO_IS_IOCTL_NOT_SUPPORTED(errno))
++                        return fd_is_namespace_by_name(fd, type);
++
+                 return -errno;
++        }
+ 
+         NamespaceType found_type = clone_flag_to_namespace_type(clone_flag);
+         if (found_type < 0)
+

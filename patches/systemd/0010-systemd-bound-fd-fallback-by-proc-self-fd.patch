@@ -1,0 +1,168 @@
+systemd: bound the no-close_range fd loop by /proc/self/fd
+
+0009 routes the missing close_range() to close_all_fds_frugal(). The port still
+did not run a single unit -- only the errno moved, from ENOSYS to EPERM:
+
+  Failed to close unwanted file descriptors: Operation not permitted
+  Failed at step FDS spawning .../getty: Operation not permitted
+
+The EPERM is synthetic. It is close_all_fds_frugal()'s own refusal:
+
+        if (max_fd > MAX_FD_LOOP_LIMIT)
+                return log_debug_errno(SYNTHETIC_ERRNO(EPERM),
+                                       "Refusing to loop over %d potential fds.", max_fd);
+
+It is emitted at debug level, and the kernel cmdline pins systemd.log_level=info
+(which outranks system.conf's LogLevel=), so nothing about it reaches the log.
+Sending SIGRTMIN+22 to PID 1 from boot.postBootCommands raises the level at
+runtime and the line appears, dandelion stage-2 boot of 2026-08-07:
+
+  [ 57.428940] dhcpcd.service: Refusing to loop over 2147483583 potential fds.
+  [ 57.429053] dhcpcd.service: Failed to close unwanted file descriptors:
+               Operation not permitted
+  [ 57.429150] dhcpcd.service: Failed at step FDS spawning
+               .../migrate-dhcpcd: Operation not permitted
+
+118 FDS failures in that boot; the 69 that happen after the signal each carry a
+refusal line ahead of them, same PID, under a millisecond apart. 1:1, no
+exceptions. The 49 before the signal are the same failure with the explanation
+suppressed.
+
+Where 2147483583 comes from, every value read off the device:
+
+  main.c:1358 bump_file_max_and_nr_open()  writes fs/nr_open to the kernel max
+                                           -> /proc/sys/fs/nr_open  2147483584
+  main.c:1408 bump_rlimit_nofile()         sets PID 1's RLIMIT_NOFILE cur AND
+                                           max to read_nr_open()
+                                           -> /proc/1/limits  2147483584/2147483584
+  get_max_fd()                             MAX(cur, max) - 1
+                                           -> 2147483583, just under INT_MAX so
+                                              the saturation branch never fires
+  MAX_FD_LOOP_LIMIT                        1048576
+
+exec-invoke.c runs setrlimit_closest_all() at line 5929, after close_remaining_fds()
+at 5298, so the forked child is still carrying PID 1's inherited rlimits when it
+reaches the FDS step. get_max_fd() therefore measures what RLIMIT_NOFILE permits,
+not what is open. On a kernel with close_range() this never matters, because
+frugal is only the OOM and signal-handler path; without it, it is the only path,
+and it refuses on every single spawn.
+
+No descriptor is actually failing to close. PID 1's fd table, dumped twice at
+60s and 120s (50 then 45 entries, highest fd 53), holds only /dev/null, sockets,
+pipes, timerfd/eventpoll/inotify/signalfd anon_inodes, /dev/kmsg,
+/proc/1/mountinfo, /proc/swaps, /sys/fs/cgroup and the systemd-executor binary.
+No vendor device node, so no f_op->flush() has any way to return EPERM.
+
+The fix is upstream's own, from the comment above the constant:
+
+  /* The maximum number of iterations in the loop to close descriptors in the
+   * fallback case when /proc/self/fd/ is inaccessible. */
+  #define MAX_FD_LOOP_LIMIT (1024*1024)
+
+The /proc/self/fd walk was the primary fallback until close_range() replaced it,
+and MAX_FD_LOOP_LIMIT exists to bound the case where that walk is unavailable.
+So reinstate the walk as close_all_fds_no_close_range() and point the two ENOSYS
+sites at it. It bounds the loop by what is open (53 here) rather than by the
+rlimit (2147483583), which is 40 million times fewer iterations than frugal would
+have refused to do.
+
+close_all_fds_frugal() is left exactly as it is and stays the last resort, both
+when /proc/self/fd cannot be read and for close_all_fds_without_malloc(), whose
+only caller passes (NULL, 0) from signal handler context -- opendir() allocates,
+so that path must not use the new code. Its refusal is deliberate there.
+
+The directory is read to completion before anything is closed; closing during
+iteration would mutate the directory being read. The DIR's own fd is often the
+highest one, and the cleanup attribute closes it before the loop starts, so the
+loop simply sees EBADF for it, which close_all_fds_frugal() already treats as
+"nothing there".
+
+close_range() is genuinely absent, not merely erroring. A static aarch64-musl
+probe calling syscall(436, ...) three ways on the device:
+
+  close_range(3, 5, 0)           = -1 errno=38 (Function not implemented)
+  close_range(100, 200, 0)       = -1 errno=38 (Function not implemented)
+  close_range(3, 2147483647, 0)  = -1 errno=38 (Function not implemented)
+
+--- a/src/basic/fd-util.c
++++ b/src/basic/fd-util.c
+@@ -288,6 +288,61 @@
+         return r;
+ }
+ 
++/* Returns the highest fd currently open in this process, or a negative errno if /proc/self/fd is not
++ * readable. Unlike get_max_fd() this reports what is actually open rather than what RLIMIT_NOFILE would
++ * permit, so the bound stays small even when the rlimit is raised to fs.nr_open. */
++static int highest_open_fd(void) {
++        _cleanup_closedir_ DIR *d = NULL;
++        int max_fd = 2;
++
++        d = opendir("/proc/self/fd");
++        if (!d)
++                return -errno;
++
++        /* Read the directory to completion before closing anything: closing while iterating would mutate
++         * the very directory being read. */
++        FOREACH_DIRENT(de, d, return -errno) {
++                int fd;
++
++                if (safe_atoi(de->d_name, &fd) < 0)
++                        continue;
++
++                if (fd > max_fd)
++                        max_fd = fd;
++        }
++
++        return max_fd;
++}
++
++static int close_all_fds_no_close_range(const int except[], size_t n_except) {
++        int max_fd, r = 0;
++
++        assert(except || n_except == 0);
++
++        /* Fallback for kernels without close_range(). close_all_fds_frugal() would refuse outright once
++         * RLIMIT_NOFILE exceeds MAX_FD_LOOP_LIMIT, so bound the loop by /proc/self/fd instead and keep
++         * frugal as the last resort for when /proc is not there. */
++
++        max_fd = highest_open_fd();
++        if (max_fd < 0)
++                return close_all_fds_frugal(except, n_except);
++
++        /* The DIR's own fd may well be the highest one; the cleanup attribute closed it above, so the loop
++         * just sees EBADF for it. */
++        for (int fd = 3; fd <= max_fd; fd++) {
++                int q;
++
++                if (fd_in_set(fd, except, n_except))
++                        continue;
++
++                q = close_nointr(fd);
++                if (q != -EBADF)
++                        RET_GATHER(r, q);
++        }
++
++        return r;
++}
++
+ static int close_all_fds_special_case(const int except[], size_t n_except) {
+         assert(n_except == 0 || except);
+ 
+@@ -396,7 +451,7 @@
+                 /* Close everything between the start and end fds (both of which shall stay open) */
+                 if (close_range(start + 1, end - 1, 0) < 0) {
+                         if (errno == ENOSYS)
+-                                return close_all_fds_frugal(except, n_except);
++                                return close_all_fds_no_close_range(except, n_except);
+                         return -errno;
+                 }
+         }
+@@ -408,7 +463,7 @@
+ 
+         if (close_range(sorted[n_sorted-1] + 1, INT_MAX, 0) < 0) {
+                 if (errno == ENOSYS)
+-                        return close_all_fds_frugal(except, n_except);
++                        return close_all_fds_no_close_range(except, n_except);
+                 return -errno;
+         }
+ 

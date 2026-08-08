@@ -1,0 +1,101 @@
+systemd: stop tmpfiles requiring STATX_ATTR_MOUNT_ROOT it only uses as a hint
+
+Attempt 8 left five failed units, and systemd-tmpfiles-clean.service is the one
+that only appears after the timer first fires, which is why it is not in the
+original four:
+
+  systemd-tmpfiles-clean.service: Main process exited, code=exited, status=73
+
+Running it by hand shows the same sentence 0006 and 0013 already made familiar,
+once per directory it was asked to clean:
+
+  statx(/var/tmp/systemd-private-...-dhcpcd.service-1vQLB7/tmp) failed: Protocol driver not attached
+  statx() does not support 'STATX_ATTR_MOUNT_ROOT' attribute (running on an old kernel?)
+  statx(/var/tmp) failed: Protocol driver not attached
+
+"Protocol driver not attached" is EUNATCH, which src/basic/stat-util.c returns
+when a *mandatory* attribute is missing from stx_attributes_mask.  Both statx()
+calls in the cleanup path pass STATX_ATTR_MOUNT_ROOT in the mandatory_attributes
+argument, so on a kernel that predates it (5.8) xstatx_full() gives up before it
+fills in the mode, uid and timestamps that are the actual reason for the call.
+Every entry then fails, and the unit exits 73.
+
+The attribute is not load-bearing at either site.  It answers one question --
+"is this entry the root of a different mount, and therefore not mine to clean?"
+-- and the answer is used to skip.  So ask for it optionally, use it when the
+kernel reports it, and otherwise ask is_mount_point_at(), which patch 0013 has
+already taught to answer on this kernel by comparing mount ids from
+/proc/self/fdinfo.  Both the STATX_ATTR_MOUNT_ROOT test and that fallback are
+about mount roots specifically, so the meaning is preserved rather than
+approximated.
+
+The FLAGS_SET(stx_attributes_mask, ...) test is what distinguishes "the kernel
+told us this is not a mount root" from "the kernel cannot tell us".  Without it
+an absent attribute reads as a cleared one, and stx_attributes would silently
+answer "not a mount point" for everything -- which is the failure mode where
+tmpfiles cleans across a mount boundary rather than refusing to clean at all.
+A kernel that reports the attribute takes exactly the path it takes today.
+
+Worth noting what produced the noise in the first place: nearly every directory
+in that output is a /var/tmp/systemd-private-*-dhcpcd.service-* left behind by a
+unit that has been failing and restarting since boot (patch 0015).  The cleaner
+that was supposed to collect them is this one, on a rootfs already at 98%.  The
+two fixes are independent, but they compound.
+--- a/src/tmpfiles/tmpfiles.c
++++ b/src/tmpfiles/tmpfiles.c
+@@ -615,12 +615,20 @@
+                         /* xstatx_flags= */ 0,
+                         STATX_MODE|STATX_INO,
+                         STATX_ATIME|STATX_MTIME,
+-                        STATX_ATTR_MOUNT_ROOT,
++                        /* mandatory_attributes= */ 0,
+                         &sx);
+         if (r < 0)
+                 return log_error_errno(r, "statx(%s) failed: %m", path);
+ 
+-        *ret_mountpoint = FLAGS_SET(sx.stx_attributes, STATX_ATTR_MOUNT_ROOT);
++        if (FLAGS_SET(sx.stx_attributes_mask, STATX_ATTR_MOUNT_ROOT))
++                *ret_mountpoint = FLAGS_SET(sx.stx_attributes, STATX_ATTR_MOUNT_ROOT);
++        else {
++                r = is_mount_point_at(dirfd(d), /* path= */ NULL, /* flags= */ 0);
++                if (r < 0)
++                        return log_error_errno(r, "Failed to determine whether %s is a mount point: %m", path);
++
++                *ret_mountpoint = r;
++        }
+         *ret = TAKE_PTR(d);
+         *ret_sx = sx;
+         return 1;
+@@ -716,7 +724,7 @@
+                                 /* xstatx_flags= */ 0,
+                                 STATX_TYPE|STATX_MODE|STATX_UID,
+                                 STATX_ATIME|STATX_MTIME|STATX_CTIME|STATX_BTIME,
+-                                STATX_ATTR_MOUNT_ROOT,
++                                /* mandatory_attributes= */ 0,
+                                 &sx);
+                 if (r == -ENOENT)
+                         continue;
+@@ -727,7 +735,21 @@
+                         continue;
+                 }
+ 
+-                if (FLAGS_SET(sx.stx_attributes, STATX_ATTR_MOUNT_ROOT)) {
++                bool is_mount_root;
++                if (FLAGS_SET(sx.stx_attributes_mask, STATX_ATTR_MOUNT_ROOT))
++                        is_mount_root = FLAGS_SET(sx.stx_attributes, STATX_ATTR_MOUNT_ROOT);
++                else {
++                        r = is_mount_point_at(dirfd(d), de->d_name, /* flags= */ 0);
++                        if (r < 0) {
++                                log_full_errno(r == -EACCES ? LOG_DEBUG : LOG_ERR, r,
++                                               "Failed to determine whether %s/%s is a mount point, ignoring: %m", p, de->d_name);
++                                continue;
++                        }
++
++                        is_mount_root = r;
++                }
++
++                if (is_mount_root) {
+                         log_debug("Ignoring \"%s/%s\": different mount points.", p, de->d_name);
+                         continue;
+                 }
+
