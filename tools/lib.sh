@@ -48,6 +48,66 @@ require_device() {
   fi
 }
 
+# Refuses to write $ROOT_PART while something has it mounted.
+#
+# The raw write is only safe from the stage-1 latch. Until patch 0010 landed this
+# needed no check, because stage-2 could not exec anything and therefore had no
+# adbd: "adb answers" and "the device is in stage-1" were the same statement. They
+# stopped being the same statement the moment stage-2 started working, and a
+# deploy run against a booted system rewrites the filesystem under it.
+#
+# Compared on major:minor rather than on device paths, because stage-2 mounts "/"
+# through /dev/disk/by-label and stage-1 by node -- the same partition spelled two
+# ways. Unreadable inputs abort rather than warn: the whole point is that the
+# unsafe case is indistinguishable from the safe one at the adb level.
+# shellcheck disable=SC2329
+require_unmounted_root() {
+  local want mounted
+  want=$(dsh "cat /sys/class/block/${ROOT_PART##*/}/dev")
+  if [ -z "$want" ]; then
+    echo "FATAL: cannot read major:minor for $ROOT_PART, refusing to write blind" >&2
+    exit 1
+  fi
+
+  # One partition can carry several mounts -- stage-2 has p41 on both / and
+  # /nix/store -- so the list is flattened onto one line for the message.
+  mounted=$(dsh "cut -d' ' -f3,5 /proc/self/mountinfo" | sed -n "s/^$want //p" | tr '\n' ' ')
+  if [ -n "$mounted" ]; then
+    echo "FATAL: $ROOT_PART is mounted on ${mounted% }. Writing it raw would rewrite" >&2
+    echo "       the filesystem under the running system. Park the device first:" >&2
+    echo "         nix run .#dandelion-latch" >&2
+    exit 1
+  fi
+}
+
+# Refuses to start a write the battery cannot finish.
+#
+# Stage-1 has no charger userspace: nothing negotiates USB current, so the phone
+# sits at the 500 mA default while idling on more than that. The battery reports
+# status=Charging and drains anyway -- measured at -226 mA with 9% left, and two
+# bring-up runs died that way, one of them from 18% after an hour in the latch.
+# Charging has to happen from a wall charger, and never by booting Android, which
+# would meet the deliberately zeroed superblock on p41 and may reformat it.
+#
+# A device that does not expose capacity is warned about rather than blocked. The
+# check exists to catch a known failure, not to become a new one.
+# shellcheck disable=SC2329
+require_power() {
+  local min=${1:-${MIN_BATTERY:-40}} cap
+  cap=$(dsh 'cat /sys/class/power_supply/battery/capacity' | tr -dc '0-9')
+  if [ -z "$cap" ]; then
+    echo "warning: battery capacity unreadable, proceeding without the power check" >&2
+    return 0
+  fi
+
+  echo "battery at ${cap}%"
+  if [ "$cap" -lt "$min" ]; then
+    echo "FATAL: ${cap}% is under the ${min}% this step needs. Charge from a wall" >&2
+    echo "       charger -- the latch drains on a PC port. MIN_BATTERY overrides." >&2
+    exit 1
+  fi
+}
+
 # shellcheck disable=SC2329
 wait_device() {
   local tries="${1:-60}" i=0
@@ -81,6 +141,34 @@ magic_restore() {
 magic_show() {
   adb_ exec-out "dd if=$ROOT_PART bs=1 skip=$MAGIC_OFFSET count=2 2>/dev/null" \
     | od -A n -t x1 | tr -s ' '
+}
+
+# Resolves a GPT partition name to its block device node.
+#
+# /dev/block/by-name is built by udev or Android init, and the stage-1 shell runs
+# neither -- so on the device this port actually writes from, the symlink farm is
+# absent entirely. The kernel still publishes the GPT label as PARTNAME in each
+# partition's sysfs uevent, and that is the same string the symlink would have
+# been named after, so it is the authoritative source rather than a workaround.
+#
+# Resolution is by name in both paths and never by index: the mmcblk index is not
+# stable across MTK layouts, and a wrong index writes over lk or nvram, which are
+# the partitions that cannot be recovered over USB. More than one match means the
+# label is ambiguous and the caller gets nothing rather than a guess.
+# shellcheck disable=SC2329
+resolve_partition() {
+  local want=$1 dev hits
+  dev=$(dsh "readlink -f /dev/block/by-name/$want" || true)
+  case "$dev" in
+    /dev/block/mmcblk0p[0-9]* | /dev/mmcblk0p[0-9]*)
+      printf '%s\n' "$dev"
+      return 0
+      ;;
+  esac
+
+  hits=$(dsh "grep -l '^PARTNAME=$want\$' /sys/class/block/mmcblk0p*/uevent 2>/dev/null" || true)
+  [ "$(printf '%s\n' "$hits" | grep -c .)" -eq 1 ] || return 1
+  printf '%s\n' "$hits" | sed -n 's#^/sys/class/block/\([^/]*\)/uevent$#/dev/\1#p'
 }
 
 # Reads a log slot's header block. Empty output means either an unwritten slot

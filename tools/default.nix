@@ -20,17 +20,22 @@ let
     [ (toString layout.slotA) (toString layout.slotB) layout.magic ]
     (builtins.readFile ./lib.sh);
 
-  mkTool = name: description: script: pkgs.writeShellApplication {
+  # `extraInputs` rather than one shared list with openssh in it: exactly one of
+  # these tools speaks ssh, and the other six would carry the dependency for
+  # nothing.
+  mkTool' = extraInputs: name: description: script: pkgs.writeShellApplication {
     inherit name;
     runtimeInputs = [
       pkgs.android-tools
       pkgs.coreutils
       pkgs.gnugrep
       pkgs.gnused
-    ];
+    ] ++ extraInputs;
     text = preamble + "\n" + builtins.readFile script;
     meta = { inherit description; };
   };
+
+  mkTool = mkTool' [ ];
 in
 {
   dandelion-latch = mkTool "dandelion-latch"
@@ -48,6 +53,14 @@ in
   dandelion-deploy = mkTool "dandelion-deploy"
     "Write a rootfs image in verified chunks, superblock last"
     ./deploy.sh;
+
+  # The same write over the other transport on the gadget. Kept as a separate
+  # tool rather than a flag on dandelion-deploy because the two do not share a
+  # failure model: the adb path exists to survive silent truncation, this one
+  # exists because adbd can wedge outright with the gadget still CONFIGURED.
+  dandelion-deploy-ssh = mkTool' [ pkgs.openssh ] "dandelion-deploy-ssh"
+    "Write a rootfs image over ssh, for when adbd has wedged mid-transfer"
+    ./deploy-ssh.sh;
 
   dandelion-verify = mkTool "dandelion-verify"
     "Hash the whole rootfs partition on the device and compare it to an image"

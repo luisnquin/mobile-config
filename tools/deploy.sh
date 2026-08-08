@@ -32,6 +32,17 @@ fi
 TOTAL=$((BYTES / 4096))
 echo "image $IMG -> $BYTES bytes, $TOTAL blocks"
 
+# The rootfs and the raw bring-up log share this partition: the ring starts at
+# LOG_SLOT_A, and a filesystem wide enough to reach it destroys the record of the
+# boot being debugged -- which has happened, and is why autoResize is forced off
+# in ../devices/xiaomi-dandelion/default.nix. Forcing it off only stops the
+# device from growing the filesystem after the fact; nothing else refuses an
+# image that is already too wide when it arrives.
+if [ "$TOTAL" -gt "$LOG_SLOT_A" ]; then
+  echo "FATAL: image is $TOTAL blocks, past slotA ($LOG_SLOT_A) -- it would overwrite the log ring" >&2
+  exit 1
+fi
+
 dev_hash() {
   # Written to /run and read back separately: a hash that arrives truncated over
   # the same transport that just truncated a write is not evidence of anything.
@@ -77,6 +88,11 @@ do_chunk() {
 
 require_device
 echo "identity ok"
+
+# Both checked before the magic is zeroed: a run that stops here leaves the device
+# exactly as it was found, rather than parked with a filesystem it cannot mount.
+require_unmounted_root
+require_power
 
 magic_zero
 echo "magic zeroed for the duration of the write"
