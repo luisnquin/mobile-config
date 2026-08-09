@@ -15,94 +15,76 @@
 
   stateDir = "/run/display";
   brightness = "${cfg.backlight}/brightness";
-  keysFifo = "${stateDir}/keys";
+  keysSocket = "${stateDir}/keys.sock";
 
-  evdevKey = pkgs.runCommandCC "evdev-key" {} ''
-    mkdir -p $out/bin
-    $CC -O2 -Wall -Wextra -o $out/bin/evdev-key ${./evdev-key.c}
+  # sd-bus and sd-journal, so the dashboard reads unit state and logs without
+  # forking systemctl and journalctl on every repaint. The cc wrapper carries
+  # the include and library paths for buildInputs, which pkg-config would only
+  # duplicate -- under a target prefix that plain `pkg-config` does not answer
+  # to when cross-compiling.
+  binary =
+    pkgs.runCommandCC "mobile-panel" {
+      buildInputs = [pkgs.systemd];
+    } ''
+      mkdir -p $out/bin
+      $CC -O2 -Wall -Wextra -std=gnu11 -o $out/bin/panel ${./panel.c} -lsystemd
+    '';
+
+  # Shared by every entry point: which nodes to touch, and where the level
+  # survives a screen-off.
+  commonArgs = [
+    "--backlight"
+    cfg.backlight
+    "--state-dir"
+    stateDir
+    "--default-brightness"
+    (toString cfg.defaultBrightness)
+  ];
+
+  keysArgs =
+    commonArgs
+    ++ [
+      "--keys"
+      cfg.keys.device
+      "--socket"
+      keysSocket
+      "--hold-ms"
+      (toString cfg.keys.holdMs)
+      "--repeat-ms"
+      (toString cfg.keys.repeatMs)
+      "--power"
+      (toString cfg.keys.power)
+      "--vol-up"
+      (toString cfg.keys.volumeUp)
+      "--vol-down"
+      (toString cfg.keys.volumeDown)
+    ];
+
+  dashboardArgs =
+    commonArgs
+    ++ [
+      "--interval"
+      (toString cfg.interval)
+      "--log-lines"
+      (toString cfg.logLines)
+      "--top-margin"
+      (toString cfg.topMargin)
+      "--tailscale"
+      "${config.services.tailscale.package}/bin/tailscale"
+    ]
+    ++ lib.optionals (cfg.subtitle != "") ["--subtitle" cfg.subtitle]
+    ++ lib.optionals (cfg.loadNote != "") ["--load-note" cfg.loadNote]
+    ++ lib.concatMap (s: ["--service" s]) cfg.services
+    ++ lib.optionals cfg.keys.enable ["--socket" keysSocket];
+
+  # makeWrapper word-splits --add-flags, which would tear the subtitle apart.
+  panel = pkgs.writeShellScriptBin "panel" ''
+    exec ${binary}/bin/panel ${lib.escapeShellArgs dashboardArgs} "$@"
   '';
 
-  display = pkgs.writeShellApplication {
-    name = "display";
-    runtimeInputs = [pkgs.coreutils];
-    text =
-      ''
-        backlight=${brightness}
-        saved=${stateDir}/brightness
-        fallback=${toString cfg.defaultBrightness}
-      ''
-      + builtins.readFile ./display.sh;
-  };
-
-  consoleKeys = pkgs.writeShellApplication {
-    name = "console-keys";
-    runtimeInputs = [
-      evdevKey
-      display
-      pkgs.coreutils
-    ];
-    text = ''
-      evdev-key ${cfg.keys.device} ${toString cfg.keys.holdMs} ${toString cfg.keys.repeatMs} \
-        ${toString cfg.keys.power} ${toString cfg.keys.volumeUp}:r ${toString cfg.keys.volumeDown}:r |
-        while read -r action code; do
-          # A dark panel spends the first press waking up, as every phone does.
-          # A hold emits nothing on the way down, so swallowing it too would
-          # leave the menu unreachable from off.
-          if [ "$(display status)" = off ]; then
-            display on
-            [ "$action" = hold ] || continue
-          fi
-
-          token=""
-          case "$action $code" in
-            "click ${toString cfg.keys.power}") token=. ;;
-            "hold ${toString cfg.keys.power}") token=m ;;
-            *" ${toString cfg.keys.volumeUp}") token=+ ;;
-            *" ${toString cfg.keys.volumeDown}") token=- ;;
-          esac
-          [ -n "$token" ] || continue
-
-          # Without the dashboard on the other end the write never completes,
-          # and the power key falls back to being the on/off switch.
-          if ! printf '%s' "$token" | timeout 1 tee ${keysFifo} > /dev/null; then
-            if [ "$token" = . ]; then display toggle; fi
-          fi
-        done
-    '';
-  };
-
-  panel = pkgs.writeShellApplication {
-    name = "panel";
-    # Every reading is best-effort against a device that may not expose it; a
-    # dashboard that exits over one missing sysfs file is worse than a dash.
-    bashOptions = [];
-    runtimeInputs = [
-      display
-      pkgs.coreutils
-      pkgs.gawk
-      pkgs.gnugrep
-      pkgs.gnused
-      pkgs.iproute2
-      pkgs.less
-      pkgs.procps
-      pkgs.util-linux
-      config.services.tailscale.package
-      config.systemd.package
-    ];
-    text =
-      ''
-        backlight=${brightness}
-        backlight_max=$(cat ${cfg.backlight}/max_brightness 2>/dev/null || echo 0)
-        keys=${keysFifo}
-        interval=${toString cfg.interval}
-        log_lines=${toString cfg.logLines}
-        top_margin=${toString cfg.topMargin}
-        services=(${lib.concatMapStringsSep " " lib.escapeShellArg cfg.services})
-        subtitle=${lib.escapeShellArg cfg.subtitle}
-        load_note=${lib.escapeShellArg cfg.loadNote}
-      ''
-      + builtins.readFile ./status.sh;
-  };
+  display = pkgs.writeShellScriptBin "display" ''
+    exec ${binary}/bin/panel display ${lib.escapeShellArgs commonArgs} "$@"
+  '';
 in {
   options.mobile.console = {
     enable = lib.mkEnableOption "the on-panel dashboard and power-key display toggle";
@@ -160,7 +142,7 @@ in {
     interval = lib.mkOption {
       type = lib.types.ints.positive;
       default = 5;
-      description = "Seconds between repaints, and how long a keypress waits.";
+      description = "Seconds between repaints.";
     };
 
     logLines = lib.mkOption {
@@ -168,8 +150,7 @@ in {
       default = 3000;
       description = ''
         Trailing lines a log view collects. The whole boot is 640k lines on a
-        port this noisy, and gathering it costs twenty seconds during which no
-        key is read and the spool sits in tmpfs.
+        port this noisy.
       '';
     };
 
@@ -267,23 +248,26 @@ in {
     ];
 
     # udev's 90-backlight.rules cannot run here, so the session user gets write
-    # access to the brightness node this way instead.
+    # access to the brightness node this way instead. The key socket takes the
+    # same group from this directory when the daemon binds it.
     systemd.tmpfiles.rules =
       [
         "d ${stateDir} 0775 root video -"
         "z ${brightness} 0664 root video -"
       ]
-      ++ lib.optional cfg.keys.enable "p ${keysFifo} 0660 root video -"
       ++ lib.optional cfg.quietConsole "w /sys/module/printk/parameters/ignore_loglevel - - - - N";
 
     boot.kernel.sysctl = lib.mkIf cfg.quietConsole {"kernel.printk" = "3 4 1 7";};
 
+    # Holds the evdev grab for the whole uptime, so the dashboard can come and
+    # go with tty1's login shell without the keys changing hands. With nothing
+    # connected the power key is still the on/off switch.
     systemd.services.console-keys = lib.mkIf cfg.keys.enable {
       description = "Feed the hardware keys to the panel dashboard";
       wantedBy = ["multi-user.target"];
       after = ["systemd-tmpfiles-setup.service"];
       serviceConfig = {
-        ExecStart = "${consoleKeys}/bin/console-keys";
+        ExecStart = "${binary}/bin/panel keys ${lib.escapeShellArgs keysArgs}";
         Restart = "always";
         RestartSec = 5;
       };
