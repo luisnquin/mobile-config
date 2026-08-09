@@ -62,6 +62,12 @@ in
     "Write a rootfs image over ssh, for when adbd has wedged mid-transfer"
     ./deploy-ssh.sh;
 
+  # Separate from dandelion-deploy because it is not part of writing an image:
+  # the image is deliberately narrow, and this widens the filesystem afterwards.
+  dandelion-resize-rootfs = mkTool "dandelion-resize-rootfs"
+    "Grow the rootfs offline to the block below the log ring"
+    ./resize-rootfs.sh;
+
   dandelion-verify = mkTool "dandelion-verify"
     "Hash the whole rootfs partition on the device and compare it to an image"
     ./verify.sh;
