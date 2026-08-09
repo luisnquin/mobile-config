@@ -1,9 +1,9 @@
-# The interactive shell, from the black-terminal flake. Its NixOS module is
-# imported for every device in flake.nix; this file is what turns the four
-# components on, so a device that wants a stock shell just leaves it out.
-{ pkgs, ... }:
-
+# black-terminal's components. Its module comes in from flake.nix.
 {
+  config,
+  pkgs,
+  ...
+}: {
   shared.zsh.enable = true;
   shared.eza.enable = true;
   shared.aliases.enable = true;
@@ -16,21 +16,9 @@
 
   users.defaultUserShell = pkgs.zsh;
 
-  # shared.aliases points core commands at replacements -- `cat` at bat, `top`
-  # at btop, `man` at tldr -- so without these the aliases turn working
-  # commands into command-not-found.
-  environment.systemPackages = with pkgs; [
-    alejandra
-    bat
-    btop
-    macchina
-    net-tools
-    nyancat
-    python3
-    ranger
-    rclone
-    tldr
-    unar
-    xdg-utils
+  # Without these zsh-newuser-install blocks tty1 before /etc/zprofile.
+  systemd.tmpfiles.rules = [
+    "f /home/${config.mobile.session.user}/.zshrc 0644 ${config.mobile.session.user} users -"
+    "f /root/.zshrc 0644 root root -"
   ];
 }

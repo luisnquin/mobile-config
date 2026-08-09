@@ -1,5 +1,21 @@
 {
   "nodes": {
+    "black-terminal": {
+      "locked": {
+        "lastModified": 1784916463,
+        "narHash": "sha256-sFzd0x/StYQaScU8I08jGGVahS7UV/CUzPrajabi2jI=",
+        "owner": "luisnquin",
+        "repo": "black-terminal",
+        "rev": "8f5e97bbfbe96cf9c4ef6736b17fd4b42f7b0100",
+        "type": "github"
+      },
+      "original": {
+        "owner": "luisnquin",
+        "repo": "black-terminal",
+        "rev": "8f5e97bbfbe96cf9c4ef6736b17fd4b42f7b0100",
+        "type": "github"
+      }
+    },
     "mobile-nixos": {
       "flake": false,
       "locked": {
@@ -19,6 +35,7 @@
     },
     "root": {
       "inputs": {
+        "black-terminal": "black-terminal",
         "mobile-nixos": "mobile-nixos",
         "sxmo-nix": "sxmo-nix"
       }

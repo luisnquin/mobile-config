@@ -4,9 +4,12 @@
 # debian-dandelion/kernel-info.mk and was then checked against the stock
 # boot.img from V12.0.22.0.QCDMIXM. Two things changed as a result:
 # offset_second and the dtb section format, both annotated below.
-{ config, lib, pkgs, ... }:
-
 {
+  config,
+  lib,
+  pkgs,
+  ...
+}: {
   imports = [
     ../../modules/soc/mt6765.nix
     ../../modules/systemd-linux-4.9.nix
@@ -23,6 +26,7 @@
     ../../modules/zram-linux-4.9.nix
     ../../modules/data-services.nix
     ../../modules/console
+    ../../modules/shell.nix
     ./display.nix
   ];
 
@@ -106,7 +110,7 @@
   };
 
   mobile.boot.stage-1.kernel = {
-    package = pkgs.callPackage ./kernel { };
+    package = pkgs.callPackage ./kernel {};
     # Every driver on the boot path is built in; the initrd loads nothing.
     modular = false;
   };
@@ -136,8 +140,8 @@
     # stock boot.img extracted from V12.0.22.0.QCDMIXM. Every one matches except
     # offset_second — see below.
     bootimg.flash = {
-      offset_base    = "0x40078000";
-      offset_kernel  = "0x00008000";
+      offset_base = "0x40078000";
+      offset_kernel = "0x00008000";
       offset_ramdisk = "0x11a88000";
       # Stock's second_addr is 0x40f00000, i.e. this offset against the base
       # above. kernel-info.mk's 0x80f78000 would put it at 0xc0ff0000, which is
@@ -147,9 +151,9 @@
       # there. Corrected anyway, because gate 3 asks for stock-compatible
       # geometry and an unexplained difference is a variable that costs nothing
       # to remove before a first boot.
-      offset_second  = "0x00e88000";
-      offset_tags    = "0x07808000";
-      pagesize       = "2048";
+      offset_second = "0x00e88000";
+      offset_tags = "0x07808000";
+      pagesize = "2048";
     };
 
     # Header v2 carries the base device tree inside the boot image. The
@@ -199,12 +203,13 @@
     # given. Which of the two LK consults is still unknown. The arguments below
     # reproduce the structure above; mkdtboimg's defaults give header_size 32,
     # dt_entry_size 32, page_size 2048 and version 0.
-    bootimg.dtb = pkgs.runCommand "dandelion-mt6765-dt-table.img" {
-      nativeBuildInputs = [ pkgs.buildPackages.android-tools ];
-    } ''
-      mkdtboimg create "$out" --id=0 --rev=0 \
-        ${config.mobile.boot.stage-1.kernel.package}/dtbs/mediatek/mt6765.dtb
-    '';
+    bootimg.dtb =
+      pkgs.runCommand "dandelion-mt6765-dt-table.img" {
+        nativeBuildInputs = [pkgs.buildPackages.android-tools];
+      } ''
+        mkdtboimg create "$out" --id=0 --rev=0 \
+          ${config.mobile.boot.stage-1.kernel.package}/dtbs/mediatek/mt6765.dtb
+      '';
     # kernel-info.mk sets DTB_OFFSET and TAGS_OFFSET to the same value.
     bootimg.offset_dtb = "0x07808000";
   };
@@ -362,7 +367,7 @@
   # `The option fileSystems."/".fsType was accessed but has no value defined`.
   # So match 1000 to keep both definitions alive through filterOverrides, and
   # force only inside, where the two autoResize values actually meet.
-  fileSystems."/" = lib.mkDefault { autoResize = lib.mkForce false; };
+  fileSystems."/" = lib.mkDefault {autoResize = lib.mkForce false;};
 
   # The other half of turning autoResize off, and it is not optional.
   #
@@ -407,7 +412,7 @@
 
   mobile.usb = {
     mode = "gadgetfs";
-    idVendor = "18D1";  # Google
+    idVendor = "18D1"; # Google
     idProduct = "4EE7"; # not the fastboot/preloader IDs, so lsusb disambiguates
 
     gadgetfs.functions = {
