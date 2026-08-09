@@ -68,6 +68,8 @@ let
       backlight=${brightness}
       backlight_max=$(cat ${cfg.backlight}/max_brightness 2>/dev/null || echo 0)
       interval=${toString cfg.interval}
+      top_margin=${toString cfg.topMargin}
+      services=(${lib.concatMapStringsSep " " lib.escapeShellArg cfg.services})
       subtitle=${lib.escapeShellArg cfg.subtitle}
       load_note=${lib.escapeShellArg cfg.loadNote}
     ''
@@ -91,6 +93,40 @@ in
       description = ''
         Parenthetical printed after the load average. Meant for ports whose
         idle load is not zero, where an unannotated figure reads as a fault.
+      '';
+    };
+
+    services = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [
+        "sshd:22"
+        "tailscaled"
+      ];
+      example = [ "postgresql:5432" ];
+      description = ''
+        Units to show state and memory for, as `name` or `name:port`. A port
+        adds a count of established connections to it.
+      '';
+    };
+
+    topMargin = lib.mkOption {
+      type = lib.types.ints.unsigned;
+      default = 5;
+      description = ''
+        Blank rows above the first line. Enough to clear rounded corners and a
+        camera cutout, both of which sit over the first rows of the console.
+      '';
+    };
+
+    quietConsole = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = ''
+        Keep kernel messages off the console so they do not overwrite the
+        dashboard. Clears `ignore_loglevel`, which the boot image sets on the
+        cmdline and which otherwise forces every message through regardless of
+        `kernel.printk`. Turn it off when bringing up a kernel, where losing
+        console output costs more than a legible panel.
       '';
     };
 
@@ -160,7 +196,10 @@ in
     systemd.tmpfiles.rules = [
       "d ${stateDir} 0775 root video -"
       "z ${brightness} 0664 root video -"
-    ];
+    ]
+    ++ lib.optional cfg.quietConsole "w /sys/module/printk/parameters/ignore_loglevel - - - - N";
+
+    boot.kernel.sysctl = lib.mkIf cfg.quietConsole { "kernel.printk" = "3 4 1 7"; };
 
     systemd.services.display-power-key = lib.mkIf cfg.powerKey.enable {
       description = "Toggle the panel backlight from the power key";

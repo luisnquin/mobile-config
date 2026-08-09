@@ -150,9 +150,13 @@ clients_on() {
   awk -v p="$1" '{n = split($3, a, ":"); if (a[n] == p) c++} END {print c + 0}' <<< "$established"
 }
 
+# MemoryCurrent comes from the cgroup rather than `systemctl show`: asking
+# systemd for it also makes it stat cpu.stat, which this kernel does not carry,
+# and it logs a failure to the journal on every repaint.
 service_row() {
-  local unit=$1 state mem
-  { read -r state; read -r mem; } < <(systemctl show "$unit" -p ActiveState -p MemoryCurrent --value 2>/dev/null)
+  local unit=$1 state mem=0
+  state=$(systemctl show "$unit.service" -p ActiveState --value 2>/dev/null)
+  sysread "/sys/fs/cgroup/system.slice/$unit.service/memory.current" && mem=$val
   case "$mem" in '' | *[!0-9]*) mem=0 ;; esac
   printf '%s%-11s%s %s %6s' "$BLD" "$unit" "$RST" "$(state_of "$state")" "$(human_kb "$((mem / 1024))")"
 }
@@ -178,7 +182,8 @@ frame() {
   local zorig=0 zcompr=0 zratio="-"
   local dtotal dused dpct
   local bat cap status volt curr batt_t charge charge_full input_ua flow est panel level
-  local users peer_list sessions ttys failed
+  local spec unit port pad="" i
+  local users peer_list ttys failed
 
   printf -v now '%(%Y-%m-%d %H:%M:%S)T' -1
   sysread /proc/sys/kernel/hostname && host=$val || host="?"
@@ -238,7 +243,6 @@ frame() {
   users=$(ps -eo args= 2>/dev/null |
     sed -n 's/^sshd[a-z-]*: \([^ @[]*\)@.*/\1/p' | sort -u | paste -sd, -)
   peer_list=$(awk '{n = split($3, a, ":"); if (a[n] == "22") print $4}' <<< "$established")
-  sessions=$(grep -c . <<< "$peer_list")
   peer_list=$(paste -sd' ' - <<< "$peer_list")
   ttys=$(who 2>/dev/null | awk '{printf "%s@%s since %s   ", $1, $2, $4}')
   failed=$(systemctl list-units --failed --no-legend --plain 2>/dev/null |
@@ -251,6 +255,9 @@ frame() {
   # cleared: mtkfb only composites when msm-fb-refresher pans, so a blank frame
   # stays on the panel until the next pan.
   {
+    # The panel's corners are rounded, so the first rows are partly cut off.
+    for ((i = 0; i < top_margin; i++)); do printf '\n'; done
+
     printf '  %s%s%s   %s%s%s%s\n\n' \
       "$BLD$CYN" "${host^^}" "$RST" "$DIM" "${subtitle:+$subtitle . }" "$now" "$RST"
 
@@ -299,10 +306,14 @@ frame() {
     printf '        %slistening   %s%s\n\n' "$DIM" "$listening" "$RST"
 
     label SVC
-    printf '%s  %s clients\n' "$(service_row postgresql)" "$(clients_on 5432)"
-    printf '        %s  %s clients\n' "$(service_row redis)" "$(clients_on 6379)"
-    printf '        %s\n' "$(service_row tailscaled)"
-    printf '        %s  %s sessions\n' "$(service_row sshd)" "$sessions"
+    for spec in "${services[@]}"; do
+      unit=${spec%%:*}
+      port=""
+      [ "$spec" = "$unit" ] || port=${spec#*:}
+      printf '%s%s%s\n' "$pad" "$(service_row "$unit")" \
+        "${port:+  $(clients_on "$port") clients}"
+      pad='        '
+    done
     if [ -n "$failed" ]; then
       printf '        %sfailed      %s%s\n\n' "$RED" "$failed" "$RST"
     else
