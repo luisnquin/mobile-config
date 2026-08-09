@@ -83,6 +83,24 @@ Once the device boots to stage-2 and answers over ssh, changing its
 configuration does not need the latch, an image, or a reboot:
 
 ```sh
+nix run .#dandelion-switch
+```
+
+That builds, copies and activates, and then holds the change to account: it arms
+the deadman switch in [`../../modules/deploy-guard.nix`](../../modules/deploy-guard.nix)
+first, and only confirms once the device answers ssh again as the new
+generation. A switch that breaks rndis0 is never confirmed, so the device rolls
+itself back after five minutes instead of waiting for someone to walk over to it
+with a cable. It also refuses to run when `config.systemd.package` differs from
+what PID 1 is already running: `switch` runs `daemon-reexec`, and re-execing PID
+1 across two systemd builds hangs in `manager_new()`. Flash an image and reboot
+for those.
+
+The plain form still works and is still guarded — the guard arms itself from the
+activation script — but nothing confirms it, so the deploy has five minutes to
+be confirmed by hand with `ssh dandelion deploy-guard confirm`:
+
+```sh
 nixos-rebuild switch --flake .#xiaomi-dandelion --target-host dandelion
 ```
 
@@ -92,13 +110,8 @@ for an image. `boot` instead of `switch` stages the generation for the next boot
 without touching the running one; the "do not know how to make this
 configuration bootable" warning is expected, because stage-1 picks the
 generation out of `/nix/var/nix/profiles/system` and the boot image is flashed
-separately. Rollback is `nix-env -p /nix/var/nix/profiles/system --rollback` on
-the device.
-
-Check `config.systemd.package` against what PID 1 is already running before
-using `switch`. `switch` runs `daemon-reexec`, and re-execing PID 1 across two
-different systemd builds hangs in `manager_new()`; when the paths differ, use
-`boot` and reboot.
+separately. Rollback by hand is `nix-env -p /nix/var/nix/profiles/system
+--rollback` on the device.
 
 Reflash `recovery` only when the kernel, the initrd or the cmdline changed —
 `boot.img` is byte-identical across changes that touch only stage-2. Write a

@@ -86,11 +86,21 @@ ssh_ deploy-guard arm
 # switch: the gadget re-enumerates when sshd and the network units restart, and
 # an ExecStart killed halfway leaves a system that is neither generation.
 echo "==> switching"
+status=0
 ssh_ "nix-env -p /nix/var/nix/profiles/system --set $toplevel \
   && systemd-run --collect --unit=nixos-switch --wait \
-     /nix/var/nix/profiles/system/bin/switch-to-configuration switch" || {
-  echo "    ssh dropped during the switch, which is expected; waiting for the device"
-}
+     /nix/var/nix/profiles/system/bin/switch-to-configuration switch" || status=$?
+
+# 255 is ssh's own "the connection failed", and losing the connection during a
+# switch is ordinary here -- the gadget re-enumerates when sshd and the network
+# units restart. Anything else came from the device and means the switch itself
+# reported a problem, which is worth saying out loud even though the wait below
+# is the same either way.
+case "$status" in
+  0) ;;
+  255) echo "    ssh dropped during the switch, which is expected here" ;;
+  *) echo "    switch-to-configuration reported failure (status $status)" >&2 ;;
+esac
 
 echo "==> waiting up to ${WAIT}s for $HOST to answer as the new generation"
 deadline=$(( $(date +%s) + WAIT ))

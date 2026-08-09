@@ -91,4 +91,11 @@ in {
     mkTool "dandelion-reboot"
     "Reboot via sysrq, which works in stage-1 where adb reboot does not"
     ./reboot.sh;
+
+  # The only tool here that talks to a booted system rather than to the stage-1
+  # latch, and the only one that needs nix on the host side.
+  dandelion-switch =
+    mkTool' [pkgs.nix pkgs.openssh] "dandelion-switch"
+    "Activate a system generation and roll it back unless the device answers afterwards"
+    ./switch.sh;
 }
