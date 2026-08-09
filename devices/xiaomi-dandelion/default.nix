@@ -28,6 +28,7 @@
     ../../modules/data-services.nix
     ../../modules/deploy-guard.nix
     ../../modules/maintenance.nix
+    ../../modules/vendor-firmware.nix
     ../../modules/console
     ../../modules/shell.nix
     ./display.nix
@@ -90,6 +91,11 @@
   # 907 MiB of journal and 23 uncollected system generations, six hours after a
   # boot. Neither is bounded by default on a 16 GiB rootfs.
   mobile.services.maintenance.enable = true;
+
+  # Wi-Fi, Bluetooth, FM and the touch panel all load firmware that only exists
+  # on the stock `vendor` partition. The kernel now has the drivers built in;
+  # this is the other half.
+  mobile.hardware.vendorFirmware.enable = true;
 
   # The panel is not a phone screen any more, so it stops carrying a boot
   # console and starts carrying state. The power key becomes its on/off switch.
