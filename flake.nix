@@ -13,6 +13,8 @@
     };
 
     black-terminal.url = "github:luisnquin/black-terminal/8f5e97bbfbe96cf9c4ef6736b17fd4b42f7b0100";
+
+    home-manager.url = "github:nix-community/home-manager/bf9ce9fec78f95f374e8dd3b503863a3ec128ebe";
   };
 
   outputs = {
@@ -20,6 +22,7 @@
     mobile-nixos,
     sxmo-nix,
     black-terminal,
+    home-manager,
   }: let
     devices = {
       xiaomi-dandelion = ./devices/xiaomi-dandelion;
@@ -147,8 +150,11 @@
         # How non-flake sources reach a module's argument set. Device files
         # are paths, so a flake input can only reach them from here.
         additionalConfiguration = {
-          imports = [black-terminal.nixosModules.default];
-          _module.args = {inherit sxmo-nix;};
+          imports = [
+            black-terminal.nixosModules.default
+            home-manager.nixosModules.home-manager
+          ];
+          _module.args = {inherit sxmo-nix black-terminal;};
         };
       };
 
