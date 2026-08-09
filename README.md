@@ -55,15 +55,16 @@ nix develop                             # adb, fastboot, dtc, python3
 Outputs are `<device>-{boot-img,recovery-img,fastboot-images,kernel,system}` for
 `x86_64-linux` and `aarch64-linux`. x86_64 cross-compiles.
 
-Each device also has a `-headless-{fastboot-images,system}` pair: the same
-device with `mobile.session.sxmo.enable = false`. Use it while debugging
-anything below the session, because the graphical closure is what makes those
-rebuilds expensive. Measured on `xiaomi-dandelion`:
+The default arm carries no graphical session. Each device also has a
+`-graphical-{fastboot-images,system}` pair: the same device with
+`mobile.session.sxmo.enable = true`. Build it only to work on the session
+itself, because that closure is what makes every rebuild below it expensive.
+Measured on `xiaomi-dandelion`:
 
-| | full | headless |
+| | default | graphical |
 |---|---|---|
-| toplevel closure | 2.6 GiB, 980 paths | 1.0 GiB, 647 paths |
-| `system.img` | 4.08 GiB | 2.22 GiB |
+| toplevel closure | 1.0 GiB, 647 paths | 2.6 GiB, 980 paths |
+| `system.img` | 2.22 GiB | 4.08 GiB |
 
 The difference is xorg-server, mesa, gstreamer, ffmpeg, pango, cairo and the
 font trees. `boot.img` is byte-identical between the two, so switching arms

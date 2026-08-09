@@ -31,22 +31,28 @@
     ./display.nix
   ];
 
-  # Mode 1, selected here: stage-2 boots to an autologin shell on tty1, and
-  # `sxmo_xinit.sh` from that shell starts the session by hand.
-  # Mode 2: tty1's login shell runs it at boot.
+  # Off, and the interface is the console dashboard in ../../modules/console.
   #
-  # Mode 2 is what a keyboardless unit wants, and it is where this is going,
-  # but X does not come up on this port yet: `sxmo_xinit.sh` dies with "dwm:
+  # sxmo has never drawn a pixel on this port. `sxmo_xinit.sh` dies with "dwm:
   # cannot open display" and leaves superd, dbus-monitor and the
-  # sxmo_run_aligned loops behind, all writing to the tty they inherited. That
-  # scribbles over the dashboard for the rest of the uptime, so tty1 gets the
-  # dashboard and the session is started by hand over ssh. Flip this back the
-  # moment X starts.
+  # sxmo_run_aligned loops behind, all writing to the tty they inherited, which
+  # scribbles over the dashboard for the rest of the uptime. No Xorg log has
+  # ever been written, so the failure is upstream of the server starting at all.
   #
-  # mkDefault so the headless arm in flake.nix can turn it off: the session
-  # closure is what makes a systemd patch cost hours, and none of it is on the
-  # path being debugged.
-  mobile.session.sxmo.enable = lib.mkDefault true;
+  # What it costs while it does not work is the reason it is off rather than
+  # merely not autostarted. `systemdMinimal` is libudev, mesa links it, and
+  # xorg-server, gtk4, ffmpeg and gst-plugins-bad sit on top -- so every systemd
+  # patch in ../../modules/systemd-linux-4.9.nix invalidates the whole graphical
+  # stack and costs hours of cross-compilation plus a multi-GB write over the
+  # gadget. `nix store diff-closures` across such a rebuild reports no version
+  # change anywhere: it is the entire closure, rebuilt at the same versions.
+  #
+  # mkDefault so the graphical arm in flake.nix can turn it back on for the one
+  # job that needs it -- finding out why X will not start.
+  mobile.session.sxmo.enable = lib.mkDefault false;
+
+  # Kept for the graphical arm rather than for this one. Whenever sxmo is turned
+  # back on, tty1 still belongs to the dashboard until X is known to work.
   mobile.session.graphical.autostart = false;
 
   # Enrolled by hand, and only reachable through the cable: see viaHostGateway

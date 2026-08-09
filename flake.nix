@@ -165,12 +165,14 @@
     outputsFor = system: device: let
       eval = evalFor system device {};
 
-      # The same device with no graphical session. Every systemd patch
-      # invalidates the whole closure below it, and with sxmo enabled that
-      # closure includes gtk4, gstreamer and the native halves of both --
-      # none of which is on the path anyone is debugging on a 4.9 kernel.
-      # Same kernel, same initrd, same patched systemd, same networking.
-      headless = evalFor system device {mobile.session.sxmo.enable = false;};
+      # The same device with the graphical session turned back on. It is the
+      # exception rather than the default because it has never started: X dies
+      # before writing a log, and the closure it adds -- mesa, xorg-server,
+      # gtk4, gstreamer, ffmpeg -- is what makes a systemd patch cost hours,
+      # since systemdMinimal is libudev and mesa links it. Build this one when
+      # the job is debugging X. Same kernel, same initrd, same patched systemd,
+      # same networking.
+      graphical = evalFor system device {mobile.session.sxmo.enable = true;};
     in {
       "${device}-boot-img" = eval.outputs.android.android-bootimg;
       "${device}-recovery-img" = eval.outputs.android.android-recovery;
@@ -178,8 +180,8 @@
       "${device}-kernel" = eval.config.mobile.boot.stage-1.kernel.package;
       "${device}-system" = eval.config.system.build.toplevel;
 
-      "${device}-headless-fastboot-images" = headless.outputs.android.android-fastboot-images;
-      "${device}-headless-system" = headless.config.system.build.toplevel;
+      "${device}-graphical-fastboot-images" = graphical.outputs.android.android-fastboot-images;
+      "${device}-graphical-system" = graphical.config.system.build.toplevel;
     };
   in {
     lib = {
@@ -223,8 +225,8 @@
         acc
         // {
           ${device} = evalFor "x86_64-linux" device {};
-          "${device}-headless" = evalFor "x86_64-linux" device {
-            mobile.session.sxmo.enable = false;
+          "${device}-graphical" = evalFor "x86_64-linux" device {
+            mobile.session.sxmo.enable = true;
           };
         }
     ) {} (builtins.attrNames devices);

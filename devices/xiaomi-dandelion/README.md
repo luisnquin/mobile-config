@@ -83,7 +83,7 @@ Once the device boots to stage-2 and answers over ssh, changing its
 configuration does not need the latch, an image, or a reboot:
 
 ```sh
-nixos-rebuild switch --flake .#xiaomi-dandelion-headless --target-host dandelion
+nixos-rebuild switch --flake .#xiaomi-dandelion --target-host dandelion
 ```
 
 nyx builds it (cross, from `binfmt`'s `aarch64-linux`) and copies the store
