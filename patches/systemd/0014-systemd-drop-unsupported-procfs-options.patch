@@ -1,0 +1,78 @@
+systemd: drop procfs mount options this kernel cannot honour
+
+ProtectProc= and ProcSubset= are written into a procfs mount option string by
+mount_procfs(), symbolically: "hidepid=invisible", "subset=pid".  Both spellings
+arrived in Linux 5.8.  Before that procfs parses hidepid= as a number and knows
+no subset= at all, and it rejects the whole option string over a single element
+it does not recognise, so one unknown token fails the mount with -EINVAL.  This
+is 5 of the 20 units still failing at step NAMESPACE in stage-2 attempt 7; the
+other 15 are 0013.
+
+The numeric spelling is accepted.  Measured on dandelion (4.9.190) inside a
+private mount namespace, mounting a fresh procfs over /mnt:
+
+  hidepid=invisible  EINVAL
+  subset=pid         EINVAL
+  hidepid=1          ok
+  hidepid=2          ok
+  (no options)       ok
+
+It must not be used anyway.  Per-mount hidepid arrived in the same 5.8 release
+as the symbolic spelling; before it, hidepid is a field of struct pid_namespace
+and is therefore shared by every procfs mount in that pid namespace.  A unit's
+private mount namespace does not contain it -- only a private pid namespace
+would, and units do not get one.  So mounting procfs with hidepid=2 inside
+avahi-daemon's namespace sets it for PID 1's /proc as well.  Measured on the
+device, with the host's mount id and superblock both unchanged across the
+restart:
+
+  # mount -o remount,hidepid=0 /proc          (in PID 1's mount namespace)
+  21 29 0:4 / /proc rw,...,relatime shared:2 - proc proc rw
+  # systemctl restart avahi-daemon.service
+  21 29 0:4 / /proc rw,...,relatime shared:2 - proc proc rw,hidepid=2
+
+Nothing was moved or replaced: it is one flag, reached through two mounts of one
+superblock.  Four units on this device ask for ProtectProc=invisible, so the
+device had been running under a system-wide hidepid=2 since the first of them
+started.  The visible damage is polkit -- polkitd runs as polkituser and
+resolves a D-Bus caller by reading /proc/<pid>/status, which under hidepid=2 it
+cannot open for a process it does not own, so every authorization check fails
+before any rule is consulted and `nmcli connection add` answers "Insufficient
+privileges" to a user who is in the networkmanager group.
+
+So retry once with no options at all when the first mount returns -EINVAL.  A
+unit that asked for ProtectProc= or ProcSubset= gets a procfs with neither
+applied, which is what it would have got from any kernel before 5.8, and the
+exec proceeds instead of dying at step NAMESPACE.  Silently not enforcing a
+hardening directive is worth stating plainly; the alternative on this kernel is
+not enforcing it per-unit but enforcing it on everything.
+
+The retry is deliberately narrow.  It only runs when the first attempt failed
+with exactly -EINVAL and only when options were passed at all, so a unit with
+default settings mounts procfs through the unchanged path.
+
+Upstream is unlikely to take this: systemd's baseline is far above 4.9.
+
+--- a/src/core/namespace.c
++++ b/src/core/namespace.c
+@@ -1586,5 +1586,19 @@
+          * one. i.e we don't reuse existing mounts here under any condition, we want a new instance owned by
+          * our user namespace and with our hidepid= settings applied. Hence, let's get rid of everything
+          * mounted on /proc/ first. */
+-        return mount_private_apivfs("proc", mount_entry_path(m), "/proc", opts, p->runtime_scope);
++        r = mount_private_apivfs("proc", mount_entry_path(m), "/proc", opts, p->runtime_scope);
++        if (r != -EINVAL || !opts)
++                return r;
++
++        /* procfs rejects the whole option string over a single element it does not recognise, and both
++         * elements that can appear here arrived in the same release: the symbolic hidepid= values and
++         * subset= are Linux 5.8. The numeric hidepid= form older kernels do accept sets a flag on the pid
++         * namespace rather than on the mount, so honouring ProtectProc= through it would apply it to every
++         * procfs mount sharing that pid namespace, PID 1's included. Retry with no options instead. */
++
++        log_debug("Mounting procfs with '%s' failed with -EINVAL, retrying without options: this kernel "
++                  "predates per-mount hidepid= and subset=, so neither can be applied to this unit alone.",
++                  opts);
++
++        return mount_private_apivfs("proc", mount_entry_path(m), "/proc", /* opts= */ NULL, p->runtime_scope);
+ }

@@ -109,10 +109,17 @@
 #         5.8. procfs rejects the whole string over one unknown element, exactly
 #         as cgroup2 does in 0007. The other 5 of attempt 7's 20. Measured in a
 #         private mount namespace on the device: hidepid=invisible EINVAL,
-#         subset=pid EINVAL, hidepid=1 and hidepid=2 both fine -- so the
-#         capability is there under the older spelling. Retries once with the
-#         numeric form, dropping subset= because there is nothing to translate it
-#         to.
+#         subset=pid EINVAL, hidepid=1 and hidepid=2 both fine. The numeric
+#         spelling is a trap, though: per-mount hidepid is Linux 5.8 as well, and
+#         before it the flag lives in struct pid_namespace, which a private mount
+#         namespace does not contain. Restarting one unit that asks for
+#         ProtectProc=invisible therefore sets hidepid=2 on PID 1's /proc too --
+#         same superblock, same mount id, one flag read through both. Four units
+#         here ask for it, so the device had been running system-wide hidepid=2
+#         throughout, and polkitd, which is not root and identifies a caller by
+#         reading /proc/<pid>/status, failed every check before reaching a rule.
+#         Retries with no options at all instead, which is what any pre-5.8
+#         kernel would have given these units.
 #   0015  SCMP_ACT_KILL_PROCESS is Linux 4.14. A unit with any SystemCall*=
 #         setting got a filter this kernel refuses to load, and systemd treats
 #         that as fatal to the exec: dhcpcd.service and logrotate.service both

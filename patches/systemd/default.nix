@@ -21,7 +21,7 @@
   ./0011-systemd-mnt-id-fdinfo-for-mandatory-mask.patch
   ./0012-systemd-credentials-plain-dir-without-fsopen.patch
   ./0013-systemd-mount-point-by-mnt-id.patch
-  ./0014-systemd-numeric-hidepid-fallback.patch
+  ./0014-systemd-drop-unsupported-procfs-options.patch
   ./0015-systemd-seccomp-kill-process-degradation.patch
   ./0016-systemd-nstype-by-nsfs-name.patch
   ./0017-systemd-tmpfiles-mount-root-optional.patch
