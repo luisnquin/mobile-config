@@ -39,9 +39,7 @@
 # for a disk that costs milliseconds per page; here a page-out is a memcpy and a
 # compression, so pushing cold anonymous pages out is cheaper than dropping page
 # cache the vendor threads keep touching.
-{ pkgs, ... }:
-
-let
+{pkgs, ...}: let
   algorithm = "lz4";
   memoryPercent = 50;
   priority = 5;
@@ -71,11 +69,10 @@ let
     swapoff ${node} 2>/dev/null || true
     echo 1 > ${sysfs}/reset 2>/dev/null || true
   '';
-in
-{
+in {
   systemd.services.zram-swap = {
     description = "Compressed swap on ${node}";
-    wantedBy = [ "multi-user.target" ];
+    wantedBy = ["multi-user.target"];
     path = [
       pkgs.util-linux
       pkgs.gnused

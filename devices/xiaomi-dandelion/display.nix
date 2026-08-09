@@ -14,11 +14,9 @@
 # never. `msm-fb-refresher --loop` issues the missing FBIOPAN_DISPLAY calls.
 # Despite the name it is not Qualcomm-specific, and Mobile NixOS documents it as
 # applicable to other vendors.
-{ ... }:
-
-{
+{...}: {
   mobile.quirks.fb-refresher.stage-1.enable = true;
   mobile.quirks.fb-refresher.enable = true;
 
-  mobile.boot.stage-1.tasks = [ ./stage-1/display-task.rb ];
+  mobile.boot.stage-1.tasks = [./stage-1/display-task.rb];
 }

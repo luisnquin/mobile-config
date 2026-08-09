@@ -9,9 +9,11 @@
 # working, on adb, or on the rootfs being mountable.
 #
 # Remove this module once the device reaches a session reliably.
-{ lib, pkgs, ... }:
-
 {
+  lib,
+  pkgs,
+  ...
+}: {
   # NixOS runs `script` under `set -e`. mobile-nixos/modules/adb.nix:64 calls
   # `gt enable $gadget` and then `wait`s on adbd, so any refusal from the UDC
   # write -- EBUSY if something re-bound the gadget, ENODEV if functionfs is not

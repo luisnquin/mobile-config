@@ -176,25 +176,24 @@
 # a local rebuild of native qtbase, openjdk and gtk4 instead of substituting
 # them from cache.nixos.org. Nothing here is wanted on the build host: these
 # work around a 4.9.190 vendor kernel, and the builder runs a current one.
-{ lib, ... }:
-
-{
+{lib, ...}: {
   nixpkgs.overlays = [
-    (final: prev: lib.optionalAttrs prev.stdenv.hostPlatform.isAarch64 {
-      # systemd's BPF programs are compiled by `clang -target bpf` against the
-      # build host's kernel headers, which a cross build does not have:
-      # `linux/bpf.h` fails on a missing `linux/types.h`. Nothing is lost by
-      # turning them off -- socket-bind, bind-iface and restrict-fs all need
-      # BTF/CO-RE and a 5.x kernel. `systemdMinimal`, which is what stage-1
-      # builds, already sets this false, which is why only stage-2 hit it.
-      # The list lives in ../patches/systemd/default.nix so that the flake's
-      # `checks.systemd-patches` applies exactly this set against the native
-      # systemd source. A patch that stops applying after a nixpkgs bump is then
-      # a failed `nix flake check` in seconds, rather than a cross-compile, a
-      # 3 GB device write and a boot.
-      systemd = (prev.systemd.override { withLibBPF = false; }).overrideAttrs (old: {
-        patches = (old.patches or [ ]) ++ import ../patches/systemd;
-      });
-    })
+    (final: prev:
+      lib.optionalAttrs prev.stdenv.hostPlatform.isAarch64 {
+        # systemd's BPF programs are compiled by `clang -target bpf` against the
+        # build host's kernel headers, which a cross build does not have:
+        # `linux/bpf.h` fails on a missing `linux/types.h`. Nothing is lost by
+        # turning them off -- socket-bind, bind-iface and restrict-fs all need
+        # BTF/CO-RE and a 5.x kernel. `systemdMinimal`, which is what stage-1
+        # builds, already sets this false, which is why only stage-2 hit it.
+        # The list lives in ../patches/systemd/default.nix so that the flake's
+        # `checks.systemd-patches` applies exactly this set against the native
+        # systemd source. A patch that stops applying after a nixpkgs bump is then
+        # a failed `nix flake check` in seconds, rather than a cross-compile, a
+        # 3 GB device write and a boot.
+        systemd = (prev.systemd.override {withLibBPF = false;}).overrideAttrs (old: {
+          patches = (old.patches or []) ++ import ../patches/systemd;
+        });
+      })
   ];
 }

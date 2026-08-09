@@ -10,13 +10,15 @@
 #
 # See ./layout.nix for where it lands and why, including the constraint it puts
 # on ever resizing the rootfs.
-{ config, lib, pkgs, ... }:
-
-let
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}: let
   cfg = config.mobile.bringup.rawLog;
   layout = import ./layout.nix;
-in
-{
+in {
   options.mobile.bringup.rawLog = {
     enable = lib.mkEnableOption "raw-offset kernel log capture for bring-up";
 

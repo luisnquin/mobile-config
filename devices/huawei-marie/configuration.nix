@@ -1,9 +1,6 @@
-{ ... }:
-
-let
+{...}: let
   profile = import ./profile.nix;
-in
-{
+in {
   imports = [
     ../../modules/soc/kirin710.nix
     ../../modules/stage2-bringup.nix

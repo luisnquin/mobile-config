@@ -4,12 +4,9 @@
   runCommand,
   unzip,
   writeShellApplication,
-}:
-
-let
+}: let
   firmware = import ./firmware.nix;
-  fetchArtifact =
-    artifact:
+  fetchArtifact = artifact:
     fetchurl {
       name = artifact.fileName;
       inherit (artifact) url hash;
@@ -26,11 +23,10 @@ let
       version = firmware.observed.preload;
     };
   };
-in
-{
+in {
   huawei-marie-firmware-inspect = writeShellApplication {
     name = "huawei-marie-firmware-inspect";
-    runtimeInputs = [ python3 ];
+    runtimeInputs = [python3];
     text = ''
       exec python3 ${./tools/inspect-ota.py} "$@"
     '';
@@ -39,13 +35,14 @@ in
 
   huawei-marie-stock-cust = cust;
   huawei-marie-stock-preload = preload;
-  huawei-marie-stock-audit = runCommand "huawei-marie-stock-audit.json" {
-    nativeBuildInputs = [ unzip ];
-  } ''
-    test "$(unzip -p ${cust} VERSION.mbn)" = '${firmware.observed.cust}'
-    test "$(unzip -p ${preload} VERSION.mbn)" = '${firmware.observed.preload}'
-    unzip -p ${cust} UPDATE.APP > /dev/null
-    unzip -p ${preload} UPDATE.APP > /dev/null
-    printf '%s\n' '${report}' > "$out"
-  '';
+  huawei-marie-stock-audit =
+    runCommand "huawei-marie-stock-audit.json" {
+      nativeBuildInputs = [unzip];
+    } ''
+      test "$(unzip -p ${cust} VERSION.mbn)" = '${firmware.observed.cust}'
+      test "$(unzip -p ${preload} VERSION.mbn)" = '${firmware.observed.preload}'
+      unzip -p ${cust} UPDATE.APP > /dev/null
+      unzip -p ${preload} UPDATE.APP > /dev/null
+      printf '%s\n' '${report}' > "$out"
+    '';
 }

@@ -11,12 +11,14 @@
 # expression module (NFT_COUNTER, NFT_SET_HASH, the NFT_CHAIN_* family) is
 # unset. See ./iptables-linux-4.9.nix -- that module points the firewall at
 # iptables-legacy, and tailscaled has to end up on the same backend.
-{ config, lib, pkgs, ... }:
-
-let
-  cfg = config.mobile.services.tailscale;
-in
 {
+  config,
+  lib,
+  pkgs,
+  ...
+}: let
+  cfg = config.mobile.services.tailscale;
+in {
   options.mobile.services.tailscale.enable = lib.mkEnableOption "the tailscale daemon";
 
   config = lib.mkIf cfg.enable {
@@ -48,7 +50,7 @@ in
     # Not yet observed failing: the daemon sits in NeedsLogin until the node is
     # enrolled, and never reaches firewall setup. This is the fix landing before
     # the symptom, not after it.
-    systemd.services.tailscaled.path = [ pkgs.iptables-legacy ];
+    systemd.services.tailscaled.path = [pkgs.iptables-legacy];
 
     # No authKeyFile: this repo is public, and a key here would be a credential
     # in git. The node is enrolled by hand, once, with `doas tailscale up`.

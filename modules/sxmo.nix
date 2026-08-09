@@ -6,9 +6,13 @@
 # and their display-manager half exists to toggle between dwm and sway, which is
 # not a choice on a device with no KMS. The packages are current enough; the
 # wiring is done here.
-{ config, lib, pkgs, sxmo-nix, ... }:
-
-let
+{
+  config,
+  lib,
+  pkgs,
+  sxmo-nix,
+  ...
+}: let
   cfg = config.mobile.session;
 
   # These trees stopped being touched in 2022 and GCC 14 turned several
@@ -17,8 +21,7 @@ let
   # be named. `_XOPEN_SOURCE` is separate: it is what actually declares
   # wcwidth() in codemadness-frontends' util.c, rather than silencing the
   # complaint about calling it undeclared.
-  preC23 =
-    drv:
+  preC23 = drv:
     drv.overrideAttrs (old: {
       NIX_CFLAGS_COMPILE = toString [
         (old.NIX_CFLAGS_COMPILE or "")
@@ -39,24 +42,26 @@ let
     # buildInputs -- which have no libxcb, because upstream dwm does not link
     # it. sxmo's fork does (`-lX11-xcb -lxcb -lxcb-res`, for window swallowing).
     sxmo-dwm = preC23 (
-      (pkgs.callPackage "${sxmo-nix}/pkgs/sxmo-dwm" { }).overrideAttrs (old: {
-        buildInputs = (old.buildInputs or [ ]) ++ [ pkgs.libxcb ];
+      (pkgs.callPackage "${sxmo-nix}/pkgs/sxmo-dwm" {}).overrideAttrs (old: {
+        buildInputs = (old.buildInputs or []) ++ [pkgs.libxcb];
       })
     );
-    sxmo-st = preC23 (pkgs.callPackage "${sxmo-nix}/pkgs/sxmo-st" { });
-    sxmo-dmenu = preC23 (pkgs.callPackage "${sxmo-nix}/pkgs/sxmo-dmenu" { });
+    sxmo-st = preC23 (pkgs.callPackage "${sxmo-nix}/pkgs/sxmo-st" {});
+    sxmo-dmenu = preC23 (pkgs.callPackage "${sxmo-nix}/pkgs/sxmo-dmenu" {});
     # ninja and protoc are build-host tools, but sxmo-nix lists them in
     # buildInputs. Native builds put those on PATH anyway, so the mistake only
     # surfaces when cross-compiling -- as meson failing to detect ninja at all.
     vvmd = preC23 (
-      (pkgs.callPackage "${sxmo-nix}/pkgs/vvmd" { }).overrideAttrs (old: {
-        nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [
-          pkgs.ninja
-          pkgs.protobuf
-        ];
+      (pkgs.callPackage "${sxmo-nix}/pkgs/vvmd" {}).overrideAttrs (old: {
+        nativeBuildInputs =
+          (old.nativeBuildInputs or [])
+          ++ [
+            pkgs.ninja
+            pkgs.protobuf
+          ];
       })
     );
-    codemadness-frontends = preC23 (pkgs.callPackage "${sxmo-nix}/pkgs/codemadness-frontends" { });
+    codemadness-frontends = preC23 (pkgs.callPackage "${sxmo-nix}/pkgs/codemadness-frontends" {});
 
     sxmo-utils = pkgs.callPackage "${sxmo-nix}/pkgs/sxmo-utils" {
       inherit
@@ -101,10 +106,12 @@ let
       # nothing, every `--cflags`/`--libs` expands empty, and the link fails on
       # a missing libfontconfig rather than on anything to do with the keyboard.
       svkbd = pkgs.svkbd.overrideAttrs (old: {
-        postPatch = (old.postPatch or "") + ''
-          substituteInPlace config.mk Makefile \
-            --replace-quiet pkg-config ${pkgs.stdenv.cc.targetPrefix}pkg-config
-        '';
+        postPatch =
+          (old.postPatch or "")
+          + ''
+            substituteInPlace config.mk Makefile \
+              --replace-quiet pkg-config ${pkgs.stdenv.cc.targetPrefix}pkg-config
+          '';
       });
     };
   };
@@ -131,8 +138,7 @@ let
       ${pkgs.procps}/bin/pkill dwm
     '';
   };
-in
-{
+in {
   options.mobile.session.sxmo.enable = lib.mkEnableOption "the sxmo X11 session";
 
   config = lib.mkIf cfg.sxmo.enable {
@@ -141,11 +147,11 @@ in
     # The only Xorg driver that does not need KMS. It writes into the mmap'd
     # framebuffer, so a panel that only composites on FBIOPAN_DISPLAY still
     # needs mobile.quirks.fb-refresher.
-    services.xserver.videoDrivers = [ "fbdev" ];
+    services.xserver.videoDrivers = ["fbdev"];
 
     # No display manager: `startx` is what the session hook below runs.
     services.xserver.displayManager.startx.enable = true;
-    services.displayManager.sessionPackages = [ sxmoPkgs.sxmo-utils ];
+    services.displayManager.sessionPackages = [sxmoPkgs.sxmo-utils];
     services.displayManager.defaultSession = "sxmo";
 
     services.libinput.enable = lib.mkDefault true;
@@ -157,15 +163,17 @@ in
     # espeak-ng's data generator.
     services.speechd.enable = false;
 
-    environment.systemPackages = [
-      sxmoPkgs.sxmo-utils
-      pkgs.superd
-    ] ++ lib.optional cfg.graphical.autostart ttyModeApp;
+    environment.systemPackages =
+      [
+        sxmoPkgs.sxmo-utils
+        pkgs.superd
+      ]
+      ++ lib.optional cfg.graphical.autostart ttyModeApp;
 
     # sxmo reads hooks, superd services and its own configuration out of
     # /run/current-system/sw/share.
-    environment.pathsToLink = [ "/share" ];
-    services.udev.packages = [ sxmoPkgs.sxmo-utils ];
+    environment.pathsToLink = ["/share"];
+    services.udev.packages = [sxmoPkgs.sxmo-utils];
     # The same graphical-desktop baseline turns on the default font set, which
     # is noto-fonts-cjk-{sans,serif} plus noto-fonts-color-emoji. The emoji one
     # runs zopflipng over a few thousand PNGs at build time, and none of it is

@@ -2,8 +2,7 @@ let
   firmware = import ./firmware.nix;
   sourceEvidence = import ./kernel/source-evidence.nix;
   sizes = firmware.partitionGeometryCandidate.sizesKiB;
-in
-{
+in {
   complete = false;
 
   mobileNixos = {

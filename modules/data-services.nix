@@ -27,9 +27,7 @@
   lib,
   pkgs,
   ...
-}:
-
-let
+}: let
   cfg = config.mobile.services.data;
 
   secrets = "/var/lib/secrets";
@@ -60,8 +58,7 @@ let
     "tailscale0"
     "rndis0"
   ];
-in
-{
+in {
   options.mobile.services.data = {
     enable = lib.mkEnableOption "PostgreSQL and Redis for side projects";
 
@@ -80,7 +77,7 @@ in
       enable = true;
       enableTCPIP = true;
 
-      ensureDatabases = [ cfg.database ];
+      ensureDatabases = [cfg.database];
       ensureUsers = [
         {
           name = cfg.database;
@@ -155,7 +152,7 @@ in
         "redis.service"
         "postgresql.service"
       ];
-      path = [ pkgs.coreutils ];
+      path = [pkgs.coreutils];
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
@@ -189,7 +186,7 @@ in
         "postgresql-setup.service"
         "data-secrets.service"
       ];
-      wantedBy = [ "multi-user.target" ];
+      wantedBy = ["multi-user.target"];
       path = [
         config.services.postgresql.package
         pkgs.coreutils

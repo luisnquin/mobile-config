@@ -9,28 +9,27 @@
   lib,
   pkgs,
   ...
-}:
-
-let
+}: let
   cfg = config.mobile.console;
 
   stateDir = "/run/display";
   brightness = "${cfg.backlight}/brightness";
 
-  evdevKey = pkgs.runCommandCC "evdev-key" { } ''
+  evdevKey = pkgs.runCommandCC "evdev-key" {} ''
     mkdir -p $out/bin
     $CC -O2 -Wall -Wextra -o $out/bin/evdev-key ${./evdev-key.c}
   '';
 
   display = pkgs.writeShellApplication {
     name = "display";
-    runtimeInputs = [ pkgs.coreutils ];
-    text = ''
-      backlight=${brightness}
-      saved=${stateDir}/brightness
-      fallback=${toString cfg.defaultBrightness}
-    ''
-    + builtins.readFile ./display.sh;
+    runtimeInputs = [pkgs.coreutils];
+    text =
+      ''
+        backlight=${brightness}
+        saved=${stateDir}/brightness
+        fallback=${toString cfg.defaultBrightness}
+      ''
+      + builtins.readFile ./display.sh;
   };
 
   powerKeyDaemon = pkgs.writeShellApplication {
@@ -50,7 +49,7 @@ let
     name = "panel";
     # Every reading is best-effort against a device that may not expose it; a
     # dashboard that exits over one missing sysfs file is worse than a dash.
-    bashOptions = [ ];
+    bashOptions = [];
     runtimeInputs = [
       display
       pkgs.coreutils
@@ -64,19 +63,19 @@ let
       config.services.tailscale.package
       config.systemd.package
     ];
-    text = ''
-      backlight=${brightness}
-      backlight_max=$(cat ${cfg.backlight}/max_brightness 2>/dev/null || echo 0)
-      interval=${toString cfg.interval}
-      top_margin=${toString cfg.topMargin}
-      services=(${lib.concatMapStringsSep " " lib.escapeShellArg cfg.services})
-      subtitle=${lib.escapeShellArg cfg.subtitle}
-      load_note=${lib.escapeShellArg cfg.loadNote}
-    ''
-    + builtins.readFile ./status.sh;
+    text =
+      ''
+        backlight=${brightness}
+        backlight_max=$(cat ${cfg.backlight}/max_brightness 2>/dev/null || echo 0)
+        interval=${toString cfg.interval}
+        top_margin=${toString cfg.topMargin}
+        services=(${lib.concatMapStringsSep " " lib.escapeShellArg cfg.services})
+        subtitle=${lib.escapeShellArg cfg.subtitle}
+        load_note=${lib.escapeShellArg cfg.loadNote}
+      ''
+      + builtins.readFile ./status.sh;
   };
-in
-{
+in {
   options.mobile.console = {
     enable = lib.mkEnableOption "the on-panel dashboard and power-key display toggle";
 
@@ -102,7 +101,7 @@ in
         "sshd:22"
         "tailscaled"
       ];
-      example = [ "postgresql:5432" ];
+      example = ["postgresql:5432"];
       description = ''
         Units to show state and memory for, as `name` or `name:port`. A port
         adds a count of established connections to it.
@@ -193,18 +192,19 @@ in
 
     # udev's 90-backlight.rules cannot run here, so the session user gets write
     # access to the brightness node this way instead.
-    systemd.tmpfiles.rules = [
-      "d ${stateDir} 0775 root video -"
-      "z ${brightness} 0664 root video -"
-    ]
-    ++ lib.optional cfg.quietConsole "w /sys/module/printk/parameters/ignore_loglevel - - - - N";
+    systemd.tmpfiles.rules =
+      [
+        "d ${stateDir} 0775 root video -"
+        "z ${brightness} 0664 root video -"
+      ]
+      ++ lib.optional cfg.quietConsole "w /sys/module/printk/parameters/ignore_loglevel - - - - N";
 
-    boot.kernel.sysctl = lib.mkIf cfg.quietConsole { "kernel.printk" = "3 4 1 7"; };
+    boot.kernel.sysctl = lib.mkIf cfg.quietConsole {"kernel.printk" = "3 4 1 7";};
 
     systemd.services.display-power-key = lib.mkIf cfg.powerKey.enable {
       description = "Toggle the panel backlight from the power key";
-      wantedBy = [ "multi-user.target" ];
-      after = [ "systemd-tmpfiles-setup.service" ];
+      wantedBy = ["multi-user.target"];
+      after = ["systemd-tmpfiles-setup.service"];
       serviceConfig = {
         ExecStart = "${powerKeyDaemon}/bin/display-power-key ${cfg.powerKey.device} ${toString cfg.powerKey.code}";
         Restart = "always";

@@ -30,8 +30,6 @@
 # `pkgs.buildPackages` into the cross toolchain. The module also puts this
 # package in `environment.systemPackages`, so an interactive `iptables` on the
 # device speaks to the same tables the firewall wrote.
-{ pkgs, ... }:
-
-{
+{pkgs, ...}: {
   networking.firewall.package = pkgs.iptables-legacy;
 }

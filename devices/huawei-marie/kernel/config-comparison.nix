@@ -59,7 +59,7 @@
       "use pinned Nixpkgs Clang only to build host Kconfig tools"
     ];
     targetCompilerUsed = false;
-    addedAssignments = [ ];
+    addedAssignments = [];
     droppedAssignments = [
       "# CONFIG_CONTEXTHUB_SWING is not set"
       "# CONFIG_CONTEXTHUB_SWING_DBG is not set"

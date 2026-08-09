@@ -1,10 +1,11 @@
-{ config, lib, ... }:
-
-let
+{
+  config,
+  lib,
+  ...
+}: let
   inherit (lib) mkIf mkOption types;
   cfg = config.mobile.hardware.socs;
-in
-{
+in {
   options.mobile.hardware.socs.hisilicon-kirin710.enable = mkOption {
     type = types.bool;
     default = false;

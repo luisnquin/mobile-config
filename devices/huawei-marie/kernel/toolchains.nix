@@ -1,6 +1,4 @@
-{ fetchzip }:
-
-{
+{fetchzip}: {
   clang = fetchzip {
     pname = "android-clang";
     version = "r346389c";

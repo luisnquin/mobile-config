@@ -10,13 +10,15 @@
 # avahi publishes `<networking.hostName>.local` over multicast on the gadget
 # interface, which the build host resolves through nss-mdns without any
 # configuration beyond what a desktop already has.
-{ config, lib, pkgs, ... }:
-
-let
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}: let
   cfg = config.mobile.services.avahi;
   usb = config.mobile.services.usbNetwork;
-in
-{
+in {
   options.mobile.services.avahi.enable =
     lib.mkEnableOption "mDNS publication of this device's hostname";
 
@@ -30,7 +32,7 @@ in
       # same 169.254/16 range mDNS is at home in. Left unrestricted, avahi
       # announces the host on stubs no one can reach and the useful record
       # competes with two useless ones.
-      allowInterfaces = [ usb.interface ];
+      allowInterfaces = [usb.interface];
 
       publish = {
         enable = true;
@@ -51,6 +53,6 @@ in
     # openFirewall on the avahi module opens 5353 globally. This device's
     # firewall is per-interface for everything else (see ./usb-network.nix), so
     # keep mDNS the same shape rather than widening the global set.
-    networking.firewall.interfaces.${usb.interface}.allowedUDPPorts = [ 5353 ];
+    networking.firewall.interfaces.${usb.interface}.allowedUDPPorts = [5353];
   };
 }

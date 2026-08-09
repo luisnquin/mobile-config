@@ -107,7 +107,7 @@
       "CONFIG_USB_CONFIGFS_RNDIS"
       "CONFIG_USB_GADGET"
     ];
-    relevantDisabled = [ "CONFIG_DRM" ];
+    relevantDisabled = ["CONFIG_DRM"];
   };
 
   boot = {

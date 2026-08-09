@@ -31,20 +31,20 @@
 # repeats. Verified by probing each entry of `config.nixpkgs.overlays`:
 # ours defined `gadget-tool`, and so did the Mobile NixOS overlay two positions
 # later.
-{ lib, ... }:
-
-{
+{lib, ...}: {
   nixpkgs.overlays = lib.mkAfter [
     (final: prev: {
       gadget-tool = prev.gadget-tool.overrideAttrs (old: {
-        cmakeFlags = (old.cmakeFlags or [ ]) ++ [ "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" ];
+        cmakeFlags = (old.cmakeFlags or []) ++ ["-DCMAKE_POLICY_VERSION_MINIMUM=3.5"];
       });
 
       redis = prev.redis.overrideAttrs (old: {
-        postPatch = (old.postPatch or "") + ''
-          substituteInPlace src/Makefile \
-            --replace-fail '$(TLS_MODULE) module_tests' '$(TLS_MODULE)'
-        '';
+        postPatch =
+          (old.postPatch or "")
+          + ''
+            substituteInPlace src/Makefile \
+              --replace-fail '$(TLS_MODULE) module_tests' '$(TLS_MODULE)'
+          '';
       });
     })
   ];

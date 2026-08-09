@@ -10,13 +10,14 @@
 # tree, and every MediaTek driver in the downstream tree use MT6765; only the
 # marketing name and the clock bins differ. `ro.boot.hardware` on the target
 # reads `mt6762`.
-{ config, lib, ... }:
-
-let
+{
+  config,
+  lib,
+  ...
+}: let
   inherit (lib) mkIf mkOption types;
   cfg = config.mobile.hardware.socs;
-in
-{
+in {
   options.mobile.hardware.socs.mediatek-mt6765 = {
     enable = mkOption {
       type = types.bool;
@@ -34,21 +35,22 @@ in
     mobile.quirks.fb-refresher.enable = true;
 
     mobile.kernel.structuredConfig = [
-      (helpers: with helpers; {
-        # ARCH_MEDIATEK is the *mainline* MT65xx/MT81xx platform in this tree and
-        # is mutually exclusive with the vendor stack. Kconfig says so directly:
-        # PINCTRL_MT6765 depends on `PINCTRL && !ARCH_MEDIATEK && MACH_MT6765`.
-        # Enabling it also `select`s the mainline MTK_TIMER, which collides with
-        # the vendor mtk_apxgpt.c over `mtk_timer_clkevt_aee_dump`, and flips
-        # COMMON_CLK_MT8173 on by `default ARCH_MEDIATEK`, whose clkdbg_mt8173.c
-        # this fork deleted. Both are link/build failures, not warnings.
-        ARCH_MEDIATEK = no;
+      (helpers:
+        with helpers; {
+          # ARCH_MEDIATEK is the *mainline* MT65xx/MT81xx platform in this tree and
+          # is mutually exclusive with the vendor stack. Kconfig says so directly:
+          # PINCTRL_MT6765 depends on `PINCTRL && !ARCH_MEDIATEK && MACH_MT6765`.
+          # Enabling it also `select`s the mainline MTK_TIMER, which collides with
+          # the vendor mtk_apxgpt.c over `mtk_timer_clkevt_aee_dump`, and flips
+          # COMMON_CLK_MT8173 on by `default ARCH_MEDIATEK`, whose clkdbg_mt8173.c
+          # this fork deleted. Both are link/build failures, not warnings.
+          ARCH_MEDIATEK = no;
 
-        # Set by dandelion_halium_defconfig; asserted here so a config
-        # regression fails evaluation instead of failing on the device.
-        MACH_MT6765 = yes;
-        MTK_LCM = yes;
-      })
+          # Set by dandelion_halium_defconfig; asserted here so a config
+          # regression fails evaluation instead of failing on the device.
+          MACH_MT6765 = yes;
+          MTK_LCM = yes;
+        })
     ];
   };
 }

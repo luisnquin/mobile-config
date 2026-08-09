@@ -1,8 +1,11 @@
 # Stage-2 session policy, shared by every device: a TTY by default, a graphical
 # session only when one is asked for.
-{ config, lib, pkgs, ... }:
-
-let
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}: let
   cfg = config.mobile.session;
 
   sessionMode = pkgs.writeShellScriptBin "session-mode" ''
@@ -14,8 +17,7 @@ let
       *)      echo "usage: session-mode [tty|gui|status]" >&2; exit 2 ;;
     esac
   '';
-in
-{
+in {
   options.mobile.session = {
     user = lib.mkOption {
       type = lib.types.str;
@@ -64,7 +66,7 @@ in
 
     services.getty.autologinUser = cfg.user;
 
-    environment.systemPackages = [ sessionMode ];
+    environment.systemPackages = [sessionMode];
 
     # Owned by the session user so `session-mode` needs no privileges: on a
     # device whose only keyboard is the graphical session's own on-screen one,

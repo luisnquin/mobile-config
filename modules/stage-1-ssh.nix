@@ -6,16 +6,13 @@
 #
 # The device needs a USB network function declared for this to be reachable.
 # `mobile.usb.gadgetfs.functions` composes, so adb stays up alongside it.
-{ pkgs, ... }:
-
-let
+{pkgs, ...}: let
   authorizedKeys = import ../authorized-keys.nix;
 
   authorizedKeysFile = pkgs.writeText "authorized-keys" (
     builtins.concatStringsSep "\n" authorizedKeys + "\n"
   );
-in
-{
+in {
   mobile.boot.stage-1.networking.enable = true;
 
   # dropbear resolves the account through NSS, and the initrd's glibc has no
@@ -28,7 +25,10 @@ in
   ];
 
   mobile.boot.stage-1.contents = [
-    { object = authorizedKeysFile; symlink = "/etc/authorized_keys"; }
+    {
+      object = authorizedKeysFile;
+      symlink = "/etc/authorized_keys";
+    }
   ];
 
   # This listener stops authenticating once stage-2 takes over, and that is not

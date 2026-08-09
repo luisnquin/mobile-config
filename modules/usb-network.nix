@@ -11,12 +11,14 @@
 #
 # adb is not this module's problem: mobile.adbd.enable re-launches adbd against
 # the same gadget.
-{ config, lib, pkgs, ... }:
-
-let
-  cfg = config.mobile.services.usbNetwork;
-in
 {
+  config,
+  lib,
+  pkgs,
+  ...
+}: let
+  cfg = config.mobile.services.usbNetwork;
+in {
   options.mobile.services.usbNetwork = {
     enable = lib.mkEnableOption "addressing and DHCP on the USB gadget's network interface";
 
@@ -50,7 +52,7 @@ in
 
     nameservers = lib.mkOption {
       type = lib.types.listOf lib.types.str;
-      default = [ "1.1.1.1" "9.9.9.9" ];
+      default = ["1.1.1.1" "9.9.9.9"];
       description = ''
         Resolvers to use with viaHostGateway. Not the host address: the DHCP
         server on this link answers no queries.
@@ -86,28 +88,30 @@ in
     # sweeping its device nodes has rebooted it before.
     systemd.services.usb-network-setup = {
       description = "Addressing on ${cfg.interface}";
-      wantedBy = [ "multi-user.target" ];
-      wants = [ "network-pre.target" ];
-      after = [ "network-pre.target" ];
-      before = [ "network.target" ];
-      path = [ pkgs.iproute2 ];
+      wantedBy = ["multi-user.target"];
+      wants = ["network-pre.target"];
+      after = ["network-pre.target"];
+      before = ["network.target"];
+      path = [pkgs.iproute2];
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
       };
-      script = ''
-        if [ ! -e /sys/class/net/${cfg.interface} ]; then
-          echo "${cfg.interface} is absent; the gadget did not survive switch_root" >&2
-          exit 1
-        fi
+      script =
+        ''
+          if [ ! -e /sys/class/net/${cfg.interface} ]; then
+            echo "${cfg.interface} is absent; the gadget did not survive switch_root" >&2
+            exit 1
+          fi
 
-        # `replace` throughout: stage-1 has usually set the address already, and
-        # this has to be a no-op in that case rather than an EEXIST.
-        ip link set ${cfg.interface} up
-        ip addr replace ${cfg.address}/24 dev ${cfg.interface}
-      '' + lib.optionalString cfg.viaHostGateway ''
-        ip route replace default via ${cfg.hostAddress} dev ${cfg.interface}
-      '';
+          # `replace` throughout: stage-1 has usually set the address already, and
+          # this has to be a no-op in that case rather than an EEXIST.
+          ip link set ${cfg.interface} up
+          ip addr replace ${cfg.address}/24 dev ${cfg.interface}
+        ''
+        + lib.optionalString cfg.viaHostGateway ''
+          ip route replace default via ${cfg.hostAddress} dev ${cfg.interface}
+        '';
     };
 
     # networking.useDHCP is on for the sake of interfaces that do not exist yet
@@ -124,7 +128,7 @@ in
     #
     # Every packet meant to leave the device was being handed to a stub that
     # drops it, which is why tailscaled could never reach login.tailscale.com.
-    networking.dhcpcd.denyInterfaces = [ cfg.interface "ifb*" ];
+    networking.dhcpcd.denyInterfaces = [cfg.interface "ifb*"];
 
     services.dnsmasq = {
       enable = true;
@@ -165,8 +169,8 @@ in
     # the only ssh there is: it is what carries `dandelion-deploy-ssh` when the
     # rootfs being written is the one stage-2 would have booted from.
     networking.firewall.interfaces.${cfg.interface} = {
-      allowedTCPPorts = [ 22 2222 ];
-      allowedUDPPorts = [ 67 ];
+      allowedTCPPorts = [22 2222];
+      allowedUDPPorts = [67];
     };
   };
 }

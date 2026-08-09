@@ -22,7 +22,6 @@
   python3,
   ...
 }:
-
 # `stdenv` is a callPackage-injected dependency of the builder, not one of its
 # user arguments: builder.nix is a two-level function and the user set ends in
 # `...`, so passing `stdenv = ...` alongside `version`/`src` is silently
@@ -81,7 +80,7 @@
   # bare `earlycon` could resolve a device. It was the reason this port did not
   # boot, and it is deleted rather than disabled; see boot.kernelParams in
   # ../default.nix for the bisect that established it.
-  patches = [ ../../../patches/linux/mt6765/0006-mtkfb-implement-fb_setcolreg.patch ];
+  patches = [../../../patches/linux/mt6765/0006-mtkfb-implement-fb_setcolreg.patch];
 
   # A 2024 compiler emits diagnostics this tree predates (-Warray-compare,
   # -Wbuiltin-declaration-mismatch, ...). A blanket -Wno-error does not cancel
@@ -108,9 +107,9 @@
   # builder's `patchShebangs tools` silently leaves a shebang alone when the
   # interpreter is not on PATH — python3 has to be here for the rewrite to
   # happen at all.
-  nativeBuildInputs = [ python3 ];
+  nativeBuildInputs = [python3];
 
   # gcc10+ defaults to -fno-common; this tree relies on tentative definitions
   # being merged.
-  makeFlags = [ "KCFLAGS=-fcommon" ];
+  makeFlags = ["KCFLAGS=-fcommon"];
 }
