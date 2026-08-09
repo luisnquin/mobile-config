@@ -47,8 +47,22 @@
   # defconfig lineage (`perf` vs `halium`).
 
   # Normalized from `dandelion_halium_defconfig` by an out-of-tree
-  # `make olddefconfig` against the pinned source, and kept a faithful
-  # normalization of it — no deviations.
+  # `make olddefconfig` against the pinned source. One deviation from the vendor
+  # defconfig, and it is deliberate:
+  #
+  #   CONFIG_WLAN_DRV_BUILD_IN=y   (vendor: not set)
+  #
+  # `drivers/misc/mediatek/connectivity/Makefile` descends into `wlan/adaptor/`,
+  # `wlan/core/gen4m/`, `common/`, `bt/`, `gps/` and `fmradio/` only under that
+  # symbol; with it unset the tree builds a connectivity adapter that adapts
+  # nothing, and `nmcli general` reports `WIFI-HW missing`. Droidian leaves it
+  # off because it loads the driver as an out-of-tree module built against this
+  # kernel, which is a build system this port does not have. The symbol is a
+  # plain `bool` with no dependencies (connectivity/Kconfig:374).
+  #
+  # Wi-Fi is the difference between a device that can be managed remotely and one
+  # tethered to the build host: without it the tailnet's only route out is the
+  # HTTP CONNECT tunnel on that host, over the same USB cable.
   #
   # This file is the *input* to the build, not the config the kernel is built
   # with. Mobile NixOS layers its structured config on top
