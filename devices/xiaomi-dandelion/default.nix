@@ -21,6 +21,7 @@
     ../../modules/stage-1-ssh.nix
     ../../modules/session.nix
     ../../modules/sxmo.nix
+    ../../modules/network-manager.nix
     ../../modules/tailscale.nix
     ../../modules/usb-network.nix
     ../../modules/zram-linux-4.9.nix
@@ -54,6 +55,11 @@
 
   # Until wifi works this is the only way to reach stage-2 over the network.
   mobile.services.usbNetwork.enable = true;
+
+  # nmcli, so an access point can be joined from the device once the wlan
+  # driver is built. It manages nothing but a radio; see the module for why
+  # that restriction is not optional here.
+  mobile.services.networkManager.enable = true;
 
   # The development machine is this device's uplink. It has to forward and
   # masquerade 172.16.42.0/24 for the route to lead anywhere; that belongs in
