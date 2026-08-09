@@ -21,6 +21,7 @@
     ../../modules/tailscale.nix
     ../../modules/usb-network.nix
     ../../modules/zram-linux-4.9.nix
+    ../../modules/data-services.nix
     ./display.nix
   ];
 
@@ -55,6 +56,10 @@
   # Publishes thompson.local on the cable, so nothing has to hardcode
   # 172.16.42.1 -- including known_hosts entries.
   mobile.services.avahi.enable = true;
+
+  # What the device is for. Reachable on the tailnet and on the cable, and
+  # nowhere else -- there is no third interface.
+  mobile.services.data.enable = true;
 
   # Names this physical unit, not the port. A second Redmi 9A would get its own.
   networking.hostName = "thompson";
