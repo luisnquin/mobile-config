@@ -12,6 +12,47 @@ DOTS="........................................"
 
 cores=$(nproc 2>/dev/null || echo 1)
 
+screen_rows=24
+screen_cols=80
+if size=$(stty size 2>/dev/null); then read -r screen_rows screen_cols <<< "$size"; fi
+
+# --- keys -------------------------------------------------------------------
+
+# Hardware keys arrive as single characters on a fifo, typed keys on stdin.
+# bash waits on one descriptor at a time, so both are polled in slices.
+has_keys=0
+if [ -p "$keys" ] && exec 9<> "$keys"; then has_keys=1; fi
+
+# Slices per second, so a budget stays the seconds it claims either way.
+if [ "$has_keys" = 1 ]; then slices=10; else slices=20; fi
+
+# Only the introducer reaches here; the rest of the sequence would otherwise
+# read as one keypress per byte.
+swallow_seq() {
+  local c n
+  for ((n = 0; n < 8; n++)); do
+    read -rsn1 -t 0.02 c || return
+    case "$c" in [a-zA-Z~]) return ;; esac
+  done
+}
+
+key=""
+getkey() {
+  local budget=$1 i
+  for ((i = 0; i < budget * slices; i++)); do
+    key=""
+    if read -rsn1 -t 0.05 key; then
+      if [ "$key" = "$esc" ]; then swallow_seq; else return 0; fi
+    fi
+    if [ "$has_keys" = 1 ]; then
+      key=""
+      read -rsn1 -t 0.05 key <&9 && return 0
+    fi
+  done
+  key=""
+  return 1
+}
+
 # --- readers ----------------------------------------------------------------
 
 # A frame touches about thirty files, so they go through the `read` builtin
@@ -325,10 +366,8 @@ frame() {
     label TTY
     printf '%s\n\n' "${ttys:--}"
 
-    printf ' %s[j]%s follow  %s[b]%s boot log  %s[e]%s errors  %s[k]%s kernel  %s[u]%s units  %s[t]%s top\n' \
-      "$BLD" "$RST" "$BLD" "$RST" "$BLD" "$RST" "$BLD" "$RST" "$BLD" "$RST" "$BLD" "$RST"
-    printf ' %s[n]%s network  %s[d]%s display  %s[r]%s refresh  %s[q]%s shell    %severy %ss%s\n' \
-      "$BLD" "$RST" "$BLD" "$RST" "$BLD" "$RST" "$BLD" "$RST" "$DIM" "$interval" "$RST"
+    printf ' %spower%s screen   %shold power%s menu%s        every %ss%s\n' \
+      "$BLD" "$RST" "$BLD" "$RST" "$DIM" "$interval" "$RST"
   } | sed "s/\$/${esc}[K/"
 
   printf '%s[J' "$esc"
@@ -344,7 +383,7 @@ view() {
   "$@"
   trap - INT
   printf '\n%s-- any key to return --%s' "$DIM" "$RST"
-  read -rsn1
+  while ! getkey "$interval"; do :; done
 }
 
 network_detail() {
@@ -353,6 +392,108 @@ network_detail() {
   ip -4 route
   echo
   tailscale status 2>&1 | head -20
+}
+
+# less takes a keyboard the panel does not have, so output is captured once and
+# a window of it is redrawn per keypress.
+pager() {
+  local file total rows half top printed i
+  # No key is polled until the capture returns.
+  printf '%s[2J%s[H\n %sreading...%s' "$esc" "$esc" "$DIM" "$RST"
+  file=$(mktemp) || return
+  "$@" > "$file" 2>&1
+  total=$(grep -c "" "$file")
+
+  rows=$((screen_rows - top_margin - 3))
+  [ "$rows" -lt 5 ] && rows=5
+  half=$((rows / 2))
+  top=$((total - rows))
+  [ "$top" -lt 0 ] && top=0
+
+  printf '%s[2J' "$esc"
+  while :; do
+    printed=$((total - top))
+    [ "$printed" -gt "$rows" ] && printed=$rows
+
+    printf '%s[H' "$esc"
+    {
+      for ((i = 0; i < top_margin; i++)); do printf '\n'; done
+      sed -n "$((top + 1)),$((top + rows))p" "$file" | cut -c "1-$screen_cols"
+      for ((i = printed; i < rows; i++)); do printf '\n'; done
+      printf '\n %s%d-%d of %d%s   %svol +/-%s scroll   %spower%s back\n' \
+        "$DIM" "$((top + 1))" "$((top + printed))" "$total" "$RST" \
+        "$BLD" "$RST" "$BLD" "$RST"
+    } | sed "s/\$/${esc}[K/"
+    printf '%s[J' "$esc"
+
+    getkey "$interval" || continue
+    case "$key" in
+      '+' | k) top=$((top - half)) ;;
+      '-' | j) top=$((top + half)) ;;
+      *) break ;;
+    esac
+    [ "$top" -gt $((total - rows)) ] && top=$((total - rows))
+    [ "$top" -lt 0 ] && top=0
+  done
+
+  rm -f "$file"
+}
+
+# --- menu -------------------------------------------------------------------
+
+menu_items=(backlight "boot log" errors "kernel logs" units network back)
+
+menu_frame() {
+  local sel=$1 i mark state level
+  state=$(display status)
+  read -r level < "$backlight" 2>/dev/null || level=0
+  {
+    for ((i = 0; i < top_margin; i++)); do printf '\n'; done
+
+    printf '  %sMENU%s   %shold power to close%s\n\n' "$BLD$CYN" "$RST" "$DIM" "$RST"
+
+    for ((i = 0; i < ${#menu_items[@]}; i++)); do
+      if [ "$i" -eq "$sel" ]; then mark="$CYN>$RST $BLD"; else mark='  '; fi
+      printf '  %s%-14s%s' "$mark" "${menu_items[i]}" "$RST"
+      if [ "${menu_items[i]}" = backlight ]; then
+        printf '%s%s, %s of %s%s' "$DIM" "$state" "$level" "$backlight_max" "$RST"
+      fi
+      printf '\n'
+    done
+
+    printf '\n %svol +/-%s move   %spower%s select\n' "$BLD" "$RST" "$BLD" "$RST"
+  } | sed "s/\$/${esc}[K/"
+
+  printf '%s[J' "$esc"
+}
+
+menu() {
+  local sel=0 n=${#menu_items[@]}
+  printf '%s[2J' "$esc"
+  while :; do
+    printf '%s[H' "$esc"
+    menu_frame "$sel"
+
+    getkey "$interval" || continue
+    case "$key" in
+      '+' | k) sel=$(((sel + n - 1) % n)) ;;
+      '-' | j) sel=$(((sel + 1) % n)) ;;
+      m | q) return ;;
+      '' | .)
+        case "${menu_items[sel]}" in
+          backlight) display toggle ;;
+          "boot log") pager journalctl -b -n "$log_lines" --no-pager ;;
+          errors) pager journalctl -b -p err -n "$log_lines" --no-pager ;;
+          "kernel logs") pager dmesg -HT ;;
+          units) pager systemctl list-units --no-pager --plain ;;
+          network) pager network_detail ;;
+          back) return ;;
+        esac
+        printf '%s[2J' "$esc"
+        ;;
+      *) ;;
+    esac
+  done
 }
 
 # --- main -------------------------------------------------------------------
@@ -374,17 +515,17 @@ while :; do
   printf '%s[H' "$esc"
   frame
 
-  key=""
-  read -rsn1 -t "$interval" key || true
+  getkey "$interval" || continue
   case "$key" in
     j) view journalctl -f -n 40 ;;
-    b) view journalctl -b -e ;;
-    e) view journalctl -b -p err -e ;;
-    k) view dmesg -HTw ;;
-    u) view systemctl list-units --no-pager ;;
+    b) pager journalctl -b -n "$log_lines" --no-pager ;;
+    e) pager journalctl -b -p err -n "$log_lines" --no-pager ;;
+    k) pager dmesg -HT ;;
+    u) pager systemctl list-units --no-pager --plain ;;
     t) view top ;;
-    n) view network_detail ;;
-    d) display toggle ;;
+    n) pager network_detail ;;
+    d | .) display toggle ;;
+    m) menu ;;
     q) exit 0 ;;
     *) ;;
   esac

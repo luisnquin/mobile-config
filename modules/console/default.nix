@@ -1,9 +1,10 @@
-# On-panel dashboard, and the power key as the panel's on/off switch.
+# On-panel dashboard, driven by the three hardware keys the mt6765 keypad
+# reports: power, volume up, volume down.
 #
-# The toggle writes the LED brightness and never /sys/class/graphics/fb0/blank:
-# writing 4 there deadlocks mtkfb, leaving the writer and both msm-fb-refresher
-# processes in uninterruptible sleep until the next reboot. There is no
-# /sys/class/backlight on this device.
+# The backlight toggle writes the LED brightness and never
+# /sys/class/graphics/fb0/blank: writing 4 there deadlocks mtkfb, leaving the
+# writer and both msm-fb-refresher processes in uninterruptible sleep until the
+# next reboot. There is no /sys/class/backlight on this device.
 {
   config,
   lib,
@@ -14,6 +15,7 @@
 
   stateDir = "/run/display";
   brightness = "${cfg.backlight}/brightness";
+  keysFifo = "${stateDir}/keys";
 
   evdevKey = pkgs.runCommandCC "evdev-key" {} ''
     mkdir -p $out/bin
@@ -32,16 +34,40 @@
       + builtins.readFile ./display.sh;
   };
 
-  powerKeyDaemon = pkgs.writeShellApplication {
-    name = "display-power-key";
+  consoleKeys = pkgs.writeShellApplication {
+    name = "console-keys";
     runtimeInputs = [
       evdevKey
       display
+      pkgs.coreutils
     ];
     text = ''
-      evdev-key "$1" "$2" | while read -r _; do
-        display toggle
-      done
+      evdev-key ${cfg.keys.device} ${toString cfg.keys.holdMs} ${toString cfg.keys.repeatMs} \
+        ${toString cfg.keys.power} ${toString cfg.keys.volumeUp}:r ${toString cfg.keys.volumeDown}:r |
+        while read -r action code; do
+          # A dark panel spends the first press waking up, as every phone does.
+          # A hold emits nothing on the way down, so swallowing it too would
+          # leave the menu unreachable from off.
+          if [ "$(display status)" = off ]; then
+            display on
+            [ "$action" = hold ] || continue
+          fi
+
+          token=""
+          case "$action $code" in
+            "click ${toString cfg.keys.power}") token=. ;;
+            "hold ${toString cfg.keys.power}") token=m ;;
+            *" ${toString cfg.keys.volumeUp}") token=+ ;;
+            *" ${toString cfg.keys.volumeDown}") token=- ;;
+          esac
+          [ -n "$token" ] || continue
+
+          # Without the dashboard on the other end the write never completes,
+          # and the power key falls back to being the on/off switch.
+          if ! printf '%s' "$token" | timeout 1 tee ${keysFifo} > /dev/null; then
+            if [ "$token" = . ]; then display toggle; fi
+          fi
+        done
     '';
   };
 
@@ -67,7 +93,9 @@
       ''
         backlight=${brightness}
         backlight_max=$(cat ${cfg.backlight}/max_brightness 2>/dev/null || echo 0)
+        keys=${keysFifo}
         interval=${toString cfg.interval}
+        log_lines=${toString cfg.logLines}
         top_margin=${toString cfg.topMargin}
         services=(${lib.concatMapStringsSep " " lib.escapeShellArg cfg.services})
         subtitle=${lib.escapeShellArg cfg.subtitle}
@@ -135,6 +163,16 @@ in {
       description = "Seconds between repaints, and how long a keypress waits.";
     };
 
+    logLines = lib.mkOption {
+      type = lib.types.ints.positive;
+      default = 3000;
+      description = ''
+        Trailing lines a log view collects. The whole boot is 640k lines on a
+        port this noisy, and gathering it costs twenty seconds during which no
+        key is read and the spool sits in tmpfs.
+      '';
+    };
+
     autostart = lib.mkOption {
       type = lib.types.bool;
       default = !(config.mobile.session.sxmo.enable && config.mobile.session.graphical.autostart);
@@ -160,26 +198,64 @@ in {
       description = "Level restored when no previous level was recorded.";
     };
 
-    powerKey = {
+    keys = {
       enable = lib.mkOption {
         type = lib.types.bool;
         default = true;
-        description = "Toggle the panel when the power key is pressed.";
+        description = ''
+          Drive the dashboard from the hardware keys. A held power key opens
+          the menu, the volume keys move through it, a power click selects.
+        '';
       };
 
       device = lib.mkOption {
         type = lib.types.str;
         default = "/dev/input/event1";
         description = ''
-          evdev node carrying the power key. Numbering is driver probe order,
-          so check /proc/bus/input/devices before changing it.
+          evdev node carrying the keys. Numbering is driver probe order, so
+          check /proc/bus/input/devices before changing it.
         '';
       };
 
-      code = lib.mkOption {
+      power = lib.mkOption {
         type = lib.types.ints.positive;
         default = 116;
-        description = "Linux key code to act on. 116 is KEY_POWER.";
+        description = "Linux key code for the power key. 116 is KEY_POWER.";
+      };
+
+      volumeUp = lib.mkOption {
+        type = lib.types.ints.positive;
+        default = 115;
+        description = "Linux key code for volume up. 115 is KEY_VOLUMEUP.";
+      };
+
+      volumeDown = lib.mkOption {
+        type = lib.types.ints.positive;
+        default = 114;
+        description = "Linux key code for volume down. 114 is KEY_VOLUMEDOWN.";
+      };
+
+      holdMs = lib.mkOption {
+        type = lib.types.ints.positive;
+        default = 500;
+        description = ''
+          Milliseconds a key must stay down to count as a hold rather than a
+          click. Announced as it passes, so the panel reacts before release.
+
+          A release before the threshold is the only thing that emits a click,
+          so the two can never both fire and this only has to sit above an
+          ordinary tap.
+        '';
+      };
+
+      repeatMs = lib.mkOption {
+        type = lib.types.ints.positive;
+        default = 120;
+        description = ''
+          Milliseconds between steps once a volume key is held past the hold
+          threshold. This keypad reports no EV_REP, so without a synthesized
+          repeat a held key moves a menu by one entry and a log by one screen.
+        '';
       };
     };
   };
@@ -197,23 +273,26 @@ in {
         "d ${stateDir} 0775 root video -"
         "z ${brightness} 0664 root video -"
       ]
+      ++ lib.optional cfg.keys.enable "p ${keysFifo} 0660 root video -"
       ++ lib.optional cfg.quietConsole "w /sys/module/printk/parameters/ignore_loglevel - - - - N";
 
     boot.kernel.sysctl = lib.mkIf cfg.quietConsole {"kernel.printk" = "3 4 1 7";};
 
-    systemd.services.display-power-key = lib.mkIf cfg.powerKey.enable {
-      description = "Toggle the panel backlight from the power key";
+    systemd.services.console-keys = lib.mkIf cfg.keys.enable {
+      description = "Feed the hardware keys to the panel dashboard";
       wantedBy = ["multi-user.target"];
       after = ["systemd-tmpfiles-setup.service"];
       serviceConfig = {
-        ExecStart = "${powerKeyDaemon}/bin/display-power-key ${cfg.powerKey.device} ${toString cfg.powerKey.code}";
+        ExecStart = "${consoleKeys}/bin/console-keys";
         Restart = "always";
         RestartSec = 5;
       };
     };
 
-    services.logind.powerKey = "ignore";
-    services.logind.powerKeyLongPress = "ignore";
+    services.logind.settings.Login = {
+      HandlePowerKey = "ignore";
+      HandlePowerKeyLongPress = "ignore";
+    };
 
     # Not `exec`: quitting the dashboard has to leave a shell behind, or getty
     # autologins straight back into it.
