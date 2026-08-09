@@ -322,7 +322,10 @@ static void render(int force) {
     }
     emit("\033[%d;1H%s\033[K", i + 1, a);
   }
-  if (cur->n < prev->n) {
+  /* A forced repaint owns the screen: on the first frame `prev` is empty, so
+   * whatever the tty held before -- boot messages, a session that failed to
+   * start -- is below the frame and would never be repainted away. */
+  if (force || cur->n < prev->n) {
     emit("\033[%d;1H\033[J", cur->n + 2);
   }
   if (olen) {
