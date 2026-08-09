@@ -26,6 +26,8 @@
     ../../modules/usb-network.nix
     ../../modules/zram-linux-4.9.nix
     ../../modules/data-services.nix
+    ../../modules/deploy-guard.nix
+    ../../modules/maintenance.nix
     ../../modules/console
     ../../modules/shell.nix
     ./display.nix
@@ -79,6 +81,15 @@
   # What the device is for. Reachable on the tailnet and on the cable, and
   # nowhere else -- there is no third interface.
   mobile.services.data.enable = true;
+
+  # A switch that breaks rndis0 takes the only lifeline with it, and the only
+  # recovery left is a power cycle with the phone in hand. So the switch undoes
+  # itself unless something confirms the device is still there.
+  mobile.services.deployGuard.enable = true;
+
+  # 907 MiB of journal and 23 uncollected system generations, six hours after a
+  # boot. Neither is bounded by default on a 16 GiB rootfs.
+  mobile.services.maintenance.enable = true;
 
   # The panel is not a phone screen any more, so it stops carrying a boot
   # console and starts carrying state. The power key becomes its on/off switch.

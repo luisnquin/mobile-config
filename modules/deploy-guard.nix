@@ -31,11 +31,23 @@
 }: let
   cfg = config.mobile.services.deployGuard;
 
-  # Rolls back in its own transient unit rather than in deploy-guard.service.
-  # switch-to-configuration restarts units whose files changed between the two
-  # generations, and deploy-guard.service is one of them whenever the timeout
-  # was edited -- so running the switch inside that service means the switch can
-  # kill the process performing it, halfway through.
+  # Transient rather than declared units, and that is not a style choice.
+  #
+  # The first revision of this module shipped deploy-guard.{service,timer} as
+  # ordinary units and armed them from the activation script. It never armed:
+  # switch-to-configuration runs the activation script *before* it reloads the
+  # manager, so at the moment the arm runs, systemd has never heard of a unit by
+  # that name and `systemctl restart` fails on a fresh install -- exactly the
+  # deploy the guard exists to protect. `systemd-run` needs no unit file and no
+  # reload, so it works at any point in a switch, including inside the
+  # activation script of a generation systemd has not read yet.
+  #
+  # Being transient also settles the other problem. The rollback runs
+  # switch-to-configuration, which restarts every unit whose file changed
+  # between the two generations -- and a declared deploy-guard.service is one of
+  # them whenever the timeout was edited, so the switch would kill the process
+  # performing it, halfway through. A transient unit is in no generation, so no
+  # switch touches it.
   rollback = pkgs.writeShellScript "deploy-guard-rollback" ''
     set -eu
 
@@ -50,23 +62,48 @@
     echo "rolled back to $(readlink -f /run/current-system)"
   '';
 
+  # One name for both halves: `systemd-run --on-active` creates <unit>.timer and
+  # the <unit>.service it triggers, so stopping the timer disarms and stopping
+  # the service would interrupt a rollback in progress.
+  unit = "deploy-guard";
+
+  # Absolute paths: this runs from the activation script too, whose PATH is not
+  # this system's.
+  arm = pkgs.writeShellScript "deploy-guard-arm" ''
+    set -eu
+    ${config.systemd.package}/bin/systemctl stop ${unit}.timer ${unit}.service 2>/dev/null || true
+    exec ${config.systemd.package}/bin/systemd-run \
+      --collect \
+      --unit=${unit} \
+      --on-active=${toString cfg.timeoutSec} \
+      --description="Roll back the system profile after an unconfirmed switch" \
+      --timer-property=RemainAfterElapse=false \
+      --quiet \
+      ${rollback}
+  '';
+
   cli = pkgs.writeShellApplication {
     name = "deploy-guard";
     runtimeInputs = [config.systemd.package];
     text = ''
       case "''${1:-status}" in
         arm)
-          systemctl restart deploy-guard.timer
+          ${arm}
           echo "armed: confirm within ${toString cfg.timeoutSec}s or the system rolls back"
           ;;
         confirm)
-          systemctl stop deploy-guard.timer
+          systemctl stop ${unit}.timer 2>/dev/null || true
           echo "confirmed: $(readlink -f /run/current-system)"
           ;;
         status)
-          if systemctl is-active --quiet deploy-guard.timer; then
-            echo "armed"
-            systemctl show deploy-guard.timer -p NextElapseUSecRealtime --value
+          # An elapsed timer that systemd has not collected yet still reads as
+          # active, with its next elapse at infinity. Reporting that as "armed"
+          # tells an operator the opposite of the truth: the rollback has
+          # already run. RemainAfterElapse=false above is what makes the unit go
+          # away; this is the check that does not depend on it having.
+          next=$(systemctl show ${unit}.timer -p NextElapseUSecMonotonic --value 2>/dev/null || true)
+          if systemctl is-active --quiet ${unit}.timer && [ "$next" != infinity ]; then
+            echo "armed, fires at $next (monotonic)"
           else
             echo "disarmed"
           fi
@@ -98,35 +135,22 @@ in {
   config = lib.mkIf cfg.enable {
     environment.systemPackages = [cli];
 
-    systemd.services.deploy-guard = {
-      description = "Roll back the system profile after an unconfirmed switch";
-      serviceConfig = {
-        Type = "oneshot";
-        ExecStart = "${config.systemd.package}/bin/systemd-run --collect --unit=deploy-guard-rollback ${rollback}";
-      };
-    };
-
-    # No wantedBy: nothing starts this except an explicit arm. RemainAfterElapse
-    # is off so that a fired timer reads as disarmed again rather than as an
-    # armed one that already went off.
-    systemd.timers.deploy-guard = {
-      description = "Deadline for confirming the running system generation";
-      timerConfig = {
-        OnActiveSec = cfg.timeoutSec;
-        AccuracySec = "5s";
-        RemainAfterElapse = false;
-        Unit = "deploy-guard.service";
-      };
-    };
-
     # `/run/systemd/system` is the canonical "systemd is running" test, and here
     # it is also the boot-versus-switch test: stage-2 init runs this activation
     # script and only then execs systemd, so at boot there is no manager to arm
     # a timer against. Booting is not a deploy and must not need confirming --
     # an unattended reboot would otherwise roll the device back.
+    #
+    # A guard that cannot arm is a lost safety net, not a reason to abandon the
+    # switch: the activation script runs under `set -e`, so an unguarded `${arm}`
+    # here aborts activation partway and leaves the system between two
+    # generations. Observed once, on the switch that replaced this module's
+    # declared units with transient ones -- systemd refuses a transient unit
+    # whose name still has a fragment file, and the fragment is not gone until
+    # the manager reloads, which happens after this script.
     system.activationScripts.deploy-guard = ''
       if [ -d /run/systemd/system ] && [ "''${DEPLOY_GUARD_SKIP:-0}" != 1 ]; then
-        ${config.systemd.package}/bin/systemctl --no-block restart deploy-guard.timer || true
+        ${arm} || echo "deploy-guard: could not arm, this switch is unguarded" >&2
       fi
     '';
   };
