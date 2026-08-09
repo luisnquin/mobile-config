@@ -1,0 +1,64 @@
+From: dandelion port <none@localhost>
+Subject: [PATCH] mtk_battery: do not force DEBUG logging when booted from recovery
+
+This port boots from the `recovery` partition and always will: p33 holds stock
+Android and is the way back, so p2 is the only partition this port writes.
+MediaTek's gauge driver reads that as a recovery console and turns its logging
+all the way up.
+
+    drivers/power/supply/mediatek/battery/mtk_battery.c:205
+        bool is_recovery_mode(void)
+        {
+                int boot_mode = get_boot_mode();
+                ...
+                if (boot_mode == RECOVERY_BOOT) {
+                        gm.log_level = BMLOG_DEBUG_LEVEL;
+                        fg_cust_data.daemon_log_level = BMLOG_DEBUG_LEVEL;
+
+BM_DAEMON_DEFAULT_LOG_LEVEL is 3 (BMLOG_ERROR_LEVEL) and BMLOG_DEBUG_LEVEL is 7,
+so this is not a nudge: every bm_debug(), bm_info() and bm_notice() in the gauge
+and charger drivers starts printing, each one a pr_notice() into the kernel ring
+buffer.  Measured on dandelion, six hours after a boot:
+
+    journalctl --disk-usage                            907.6M
+    lines in the journal for that boot                 872463
+    of them kernel                                     380894
+    kernel lines per second, steady state              ~17
+
+and the twelve most frequent kernel messages were all this driver:
+
+    31097  [fgauge_read_current] final current=... (ratio=...)
+    11995  [force_get_tbat] t:... precise:...
+    11995  [force_get_tbat] ...
+    11460  [BattVoltToTemp] ...
+     9478  [fgauge_read_current] final current=... (ratio=...)
+     9114  [bq25601]:bq25601_dump_regs: Reg[..] = 0x..
+
+The sysfs attribute that exists for this does not help.  Writing 3 to
+/sys/devices/platform/battery/FG_daemon_log_level does set gm.log_level, and
+is_recovery_mode() sets it straight back: it is called from the gauge's polling
+paths, not once at probe, so the attribute reads 7 again within a second.  That
+was measured too, on the running device, before writing this patch.
+
+Dropping the two assignments leaves is_recovery_mode() answering the question its
+name asks and nothing else.  Every other caller of it is unaffected, and the log
+level stays at the driver's own default, which is what a device booted from
+`boot` would have had.
+
+Upstream is not a consideration: this is a 2019 vendor tree.
+
+--- a/drivers/power/supply/mediatek/battery/mtk_battery.c
++++ b/drivers/power/supply/mediatek/battery/mtk_battery.c
+@@ -211,11 +211,8 @@
+ 		return false;
+ 
+ 	bm_debug("mtk_battery boot mode =%d\n", boot_mode);
+-	if (boot_mode == RECOVERY_BOOT) {
+-		gm.log_level = BMLOG_DEBUG_LEVEL;
+-		fg_cust_data.daemon_log_level = BMLOG_DEBUG_LEVEL;
++	if (boot_mode == RECOVERY_BOOT)
+ 		return true;
+-	}
+ 
+ 	return false;
+ }

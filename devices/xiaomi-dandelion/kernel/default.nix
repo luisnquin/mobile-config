@@ -80,7 +80,10 @@
   # bare `earlycon` could resolve a device. It was the reason this port did not
   # boot, and it is deleted rather than disabled; see boot.kernelParams in
   # ../default.nix for the bisect that established it.
-  patches = [../../../patches/linux/mt6765/0006-mtkfb-implement-fb_setcolreg.patch];
+  patches = [
+    ../../../patches/linux/mt6765/0006-mtkfb-implement-fb_setcolreg.patch
+    ../../../patches/linux/mt6765/0007-mtk-battery-keep-log-level-when-booted-from-recovery.patch
+  ];
 
   # A 2024 compiler emits diagnostics this tree predates (-Warray-compare,
   # -Wbuiltin-declaration-mismatch, ...). A blanket -Wno-error does not cancel
