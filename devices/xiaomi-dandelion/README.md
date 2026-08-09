@@ -90,9 +90,16 @@ nix run .#dandelion-log          # read the bring-up log, no mount needed
 nix run .#dandelion-deploy -- result-dandelion/system.img
 nix run .#dandelion-verify -- result-dandelion/system.img
 nix run .#dandelion-flash-bootimg -- result-dandelion/boot.img   # targets recovery
-nix run .#dandelion-reboot       # sysrq; `adb reboot` fails in stage-1
 nix run .#dandelion-unlatch      # let the next boot proceed to stage-2
+nix run .#dandelion-resize-rootfs   # grow to the block below the log ring
+nix run .#dandelion-reboot       # sysrq; `adb reboot` fails in stage-1
 ```
+
+`dandelion-resize-rootfs` runs after `dandelion-unlatch`, not before: it needs a
+readable superblock, and unlatching only decides what the *next* boot does, so
+the stage-1 session it runs in survives it. Order matters the other way too —
+the image is deliberately narrower than the partition, so a deploy undoes the
+resize and it has to be redone afterwards.
 
 `dandelion-latch` is the one that makes the rest possible. A normal boot exposes
 adb for about sixteen seconds before stage-2 tears the gadget down, which is not
