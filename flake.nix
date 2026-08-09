@@ -208,6 +208,28 @@
         )
       );
 
+      # `nixos-rebuild --flake` only looks under this attribute, and mobile-nixos
+      # hands back a bare eval that never lands there. Naming it buys the
+      # incremental path: `nixos-rebuild switch --target-host` copies the store
+      # delta over the gadget instead of writing 2.2 GiB of image through the
+      # stage-1 latch.
+      #
+      # Cross from x86_64-linux rather than forEachSystem, because the attribute
+      # takes no system argument and every image this port has produced was built
+      # that way. Before switching, check that `config.systemd.package` matches
+      # what PID 1 is already running: re-execing across two systemd builds hangs
+      # in manager_new(), and the whole point of these ports is a patched systemd.
+      nixosConfigurations = builtins.foldl' (
+        acc: device:
+        acc
+        // {
+          ${device} = evalFor "x86_64-linux" device { };
+          "${device}-headless" = evalFor "x86_64-linux" device {
+            mobile.session.sxmo.enable = false;
+          };
+        }
+      ) { } (builtins.attrNames devices);
+
       apps = forEachSystem (
         system:
         builtins.mapAttrs (name: drv: {
