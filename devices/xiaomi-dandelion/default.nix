@@ -30,21 +30,23 @@
     ./display.nix
   ];
 
-  # Mode 1: stage-2 boots to an autologin shell on tty1, and `sxmo_xinit.sh`
-  # from that shell starts the session by hand.
-  # Mode 2, selected here: tty1's login shell execs it at boot.
+  # Mode 1, selected here: stage-2 boots to an autologin shell on tty1, and
+  # `sxmo_xinit.sh` from that shell starts the session by hand.
+  # Mode 2: tty1's login shell runs it at boot.
   #
-  # Mode 2 rather than the module default, because this unit has no keyboard.
-  # Mode 1 assumes someone can type on the panel, and the only USB port is
-  # occupied by the gadget that carries adb and ssh -- an OTG keyboard would
-  # take the session's own lifeline. The tty1 guard in modules/sxmo.nix means
-  # ssh still lands on a plain shell either way.
+  # Mode 2 is what a keyboardless unit wants, and it is where this is going,
+  # but X does not come up on this port yet: `sxmo_xinit.sh` dies with "dwm:
+  # cannot open display" and leaves superd, dbus-monitor and the
+  # sxmo_run_aligned loops behind, all writing to the tty they inherited. That
+  # scribbles over the dashboard for the rest of the uptime, so tty1 gets the
+  # dashboard and the session is started by hand over ssh. Flip this back the
+  # moment X starts.
   #
   # mkDefault so the headless arm in flake.nix can turn it off: the session
   # closure is what makes a systemd patch cost hours, and none of it is on the
   # path being debugged.
   mobile.session.sxmo.enable = lib.mkDefault true;
-  mobile.session.graphical.autostart = true;
+  mobile.session.graphical.autostart = false;
 
   # Enrolled by hand, and only reachable through the cable: see viaHostGateway
   # below. Wi-Fi on this device is still untested.
