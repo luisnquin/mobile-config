@@ -156,13 +156,13 @@ in {
 
     autostart = lib.mkOption {
       type = lib.types.bool;
-      default = !(config.mobile.session.sxmo.enable && config.mobile.session.graphical.autostart);
-      defaultText = lib.literalExpression ''
-        !(config.mobile.session.sxmo.enable && config.mobile.session.graphical.autostart)
-      '';
+      default = true;
       description = ''
-        Run the dashboard from tty1's login shell, whenever a graphical session
-        is not already claiming that tty. Quitting it with `q` leaves a plain
+        Run the dashboard from tty1's login shell. It is ordered after the
+        graphical session's own hook, which returns rather than execs, so the
+        dashboard picks up tty1 whenever the session declines to start, fails
+        to start, or is quit. On a device with no keyboard that is the only
+        useful thing to fall through to. Quitting it with `q` leaves a plain
         shell behind, and it comes back on the next login.
       '';
     };
@@ -278,12 +278,14 @@ in {
       HandlePowerKeyLongPress = "ignore";
     };
 
-    # Not `exec`: quitting the dashboard has to leave a shell behind, or getty
-    # autologins straight back into it.
-    environment.loginShellInit = lib.mkIf cfg.autostart ''
+    # mkAfter so the graphical session's hook gets tty1 first; that hook returns
+    # rather than execs, so this runs whenever it declines or fails. Not `exec`:
+    # quitting the dashboard has to leave a shell behind, or getty autologins
+    # straight back into it.
+    environment.loginShellInit = lib.mkIf cfg.autostart (lib.mkAfter ''
       if [ "$(tty)" = /dev/tty1 ]; then
         panel
       fi
-    '';
+    '');
   };
 }
