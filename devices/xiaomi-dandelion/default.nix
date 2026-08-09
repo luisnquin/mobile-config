@@ -22,6 +22,7 @@
     ../../modules/usb-network.nix
     ../../modules/zram-linux-4.9.nix
     ../../modules/data-services.nix
+    ../../modules/console
     ./display.nix
   ];
 
@@ -60,6 +61,16 @@
   # What the device is for. Reachable on the tailnet and on the cable, and
   # nowhere else -- there is no third interface.
   mobile.services.data.enable = true;
+
+  # The panel is not a phone screen any more, so it stops carrying a boot
+  # console and starts carrying state. The power key becomes its on/off switch.
+  mobile.console.enable = true;
+  mobile.console.subtitle = "xiaomi redmi 9a . mt6765 . cortex-a53";
+
+  # 23 mt6765 vendor kthreads sit in uninterruptible sleep permanently, and
+  # Linux counts those in the load average. Idle here reads as ~24, so the
+  # figure needs the annotation or it looks like the device is on fire.
+  mobile.console.loadNote = "(~24 is idle: 23 vendor kthreads park in D)";
 
   # Names this physical unit, not the port. A second Redmi 9A would get its own.
   networking.hostName = "thompson";
