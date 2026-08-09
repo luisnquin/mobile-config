@@ -44,7 +44,8 @@ evidence that revision 1.39.0 is safe.
 | Activating a new generation without a reflash | works — `nix run .#dandelion-switch`, guarded |
 | Bounded journal and store growth | works — `mobile.services.maintenance` |
 | Tailscale daemon | enrolled as `thompson`, rules install, reachable — but rides the cable, see below |
-| Wi-Fi | **no driver** — the defconfig never builds one, `nmcli` reports `WIFI-HW missing` |
+| Wi-Fi | driver built in and firmware deployed — **awaiting a `recovery` flash**, see below |
+| Vendor firmware (wlan, bt, fm, touch) | extracted and installed, 32 blobs |
 | Touch, audio, modem, suspend | **untested** |
 | Charging | charges from a wall charger; net-drains on a PC port |
 | KMS / Wayland compositor | **impossible as-is**, see below |
@@ -81,6 +82,24 @@ stage-1 `/etc/passwd` locks the account. Put your key in
 `recovery` on this device measures 67108864 bytes. Check the fit before writing,
 and have the exact stock `V12.0.22.0.QCDMIXM` package and a hashed stock
 `recovery.img` on hand first.
+
+Do **not** run the `flash-critical.sh` that Mobile NixOS drops next to the
+fastboot images. It writes `boot` as well as `recovery`, and `boot` is the way
+back.
+
+A kernel change is the one change this port cannot undo over ssh, and the store
+does not keep what is already on the device — a generation that is no longer a
+GC root takes its `recovery.img` with it. Take the partition, not the image, and
+verify it against the device rather than against the file you just wrote:
+
+```sh
+ssh dandelion 'dd if=/dev/mmcblk0p2 bs=1M count=64' > recovery-p2-<what-it-is>.img
+ssh dandelion 'dd if=/dev/mmcblk0p2 bs=1M count=64 | sha256sum'
+```
+
+The dump for the kernel that predates the wlan driver is
+`~/.local/state/dandelion/recovery-p2-before-wlan.img`, sha256
+`fcefe29a1747bd18dc95ef9ca494a8611917f1163e0245631fb09a19df56408b`.
 
 ## Working on the port
 
@@ -383,6 +402,32 @@ The deploy tool takes the destination from the environment, so once that block
 exists nothing else changes:
 
     HOST=thompson-ts nix run .#dandelion-switch
+
+### Wi-Fi: two halves, one of them already on the device
+
+The driver was never built. `CONFIG_WLAN=y` and `CONFIG_MTK_COMBO_WIFI=y` are
+both set in the vendor defconfig and neither of them builds anything —
+`drivers/misc/mediatek/connectivity/Makefile` descends into `wlan/core/gen4m/`
+only under `CONFIG_WLAN_DRV_BUILD_IN`, which the defconfig leaves unset because
+Droidian builds `wmt_drv.ko` and `wmt_chrdev_wifi.ko` out of tree instead. That
+symbol is now set; `wlanProbe` and `glRegisterBus` are in `System.map`, and
+`Image.gz` grew from 12.26M to 13.41M.
+
+The second half is firmware, which the driver has none of. It lives on the stock
+`vendor` partition and is now installed from there — see
+`modules/vendor-firmware.nix` for where it comes from and why it is not in this
+repository. That half needs no reflash and is already live: `/vendor/firmware`
+resolves to the store and lists 32 files.
+
+So the sequence is: switch first, flash second. The rootfs already carries the
+firmware, so the reboot that brings up the new kernel brings up both halves
+together. Until that flash, `nmcli general` keeps reporting `WIFI-HW missing`,
+correctly — the running kernel has no driver.
+
+After it, the network is joined by hand on the device, which is what keeps the
+credential out of this repository:
+
+    nmcli device wifi connect <ssid> --ask
 
 ### systemd 261 does not run on a 4.9 kernel
 
