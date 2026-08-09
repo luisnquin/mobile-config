@@ -40,7 +40,7 @@ evidence that revision 1.39.0 is safe.
 | Stage-2 rootfs written to `userdata` | written and hash-verified, see below |
 | Stage-2 / switch_root | reached — USB tears down on cue, then nothing |
 | Stage-2 session config (TTY, sxmo) | **built, never observed to boot** |
-| Tailscale daemon | **evaluates only** — kernel has TUN, but no network to enrol over |
+| Tailscale daemon | enrolled as `thompson`, rules install, reachable — but rides the cable, see below |
 | Touch, Wi-Fi, audio, modem, charging, suspend | **untested** |
 | KMS / Wayland compositor | **impossible as-is**, see below |
 
@@ -323,7 +323,7 @@ A userspace loop writing to `/dev/console` never enters the kernel ring buffer,
 so none of the above can see one. That class of bug is found by photographing
 the panel, and one was: see `stage-1/display-task.rb`.
 
-
+### The tailnet, and how much of a second channel it really is
 
 Read off the running kernel: `CONFIG_TUN=y`, and `/dev/net/tun` exists as
 `crw------- 10, 200`. `CONFIG_NF_TABLES` and `CONFIG_IP_NF_IPTABLES` are set
@@ -340,9 +340,44 @@ is no reverse-path filtering here to loosen anyway. Exit nodes and subnet routes
 would need that config symbol added and the kernel rebuilt.
 
 No auth key is committed. The node is enrolled once by hand with `doas tailscale
-up`; state then lives in `/var/lib/tailscale`. Nothing can be enrolled yet —
-Wi-Fi is untested and the RNDIS link only reaches the build host, so `tailscaled`
-will sit in `NeedsLogin`.
+up`; state then lives in `/var/lib/tailscale`. It is enrolled, as `thompson`,
+`100.80.122.40`.
+
+Enrolling exposed a second backend problem, in the opposite direction from the
+one above. `networking.firewall.package` decides what *NixOS* runs, and this port
+already points it at `iptables-legacy`; `tailscaled` runs its own. nixpkgs wraps
+the daemon with `--prefix PATH` over its own closure, and a prefix beats anything
+`systemd.services.tailscaled.path` appends — so the daemon reached for the
+nft-backed binary, every rule insert failed with `RULE_INSERT failed (No such
+file or directory)`, and `iptables -S | grep -c ts-` was 0. The node was up,
+enrolled, and answered nothing: no `ts-input` chain, no rule to accept an inbound
+connection. The fix has to go inside the package —
+`pkgs.tailscale.override { iptables = pkgs.iptables-legacy; }` — and `iptables`
+being a named argument of that derivation is the only reason it is one line. With
+it, 13 filter rules and 3 nat rules install, and `tailscale status` prints no
+health block.
+
+What this does **not** yet buy is a channel independent of the cable. The device
+has no Wi-Fi driver (see below), so its only route to the internet is the HTTP
+CONNECT tunnel on the build host, and `tailscale ping` from that host answers
+`via 172.16.42.1:41641` — the RNDIS link. The tailnet is a genuine second channel
+for every *other* peer, and it survives sshd or the firewall being reconfigured
+in a way the cable would not, but the phone still depends on the build host being
+plugged into it. Wi-Fi is what closes that gap.
+
+One host-side gotcha, not a device fault. `Host dandelion` in `~/.ssh/config`
+pins `IdentityFile`, and its `ControlMaster` keeps a session authenticated for
+ten minutes, so the cable never re-signs. The tailnet address matches no `Host`
+block, so every connection re-signs through `gpg-agent`, which refuses under
+`BatchMode` because it cannot open a pinentry — the connection hangs at
+`Server accepts key` and then dies with `agent refused operation`. Give the
+tailnet address its own `Host` block with the same `IdentityFile`,
+`IdentitiesOnly yes` and `IdentityAgent none`, and it behaves like the cable.
+
+The deploy tool takes the destination from the environment, so once that block
+exists nothing else changes:
+
+    HOST=thompson-ts nix run .#dandelion-switch
 
 ### systemd 261 does not run on a 4.9 kernel
 
