@@ -79,7 +79,32 @@ and have the exact stock `V12.0.22.0.QCDMIXM` package and a hashed stock
 
 ## Working on the port
 
-Everything that touches the device is a flake app. Each one refuses to run
+Once the device boots to stage-2 and answers over ssh, changing its
+configuration does not need the latch, an image, or a reboot:
+
+```sh
+nixos-rebuild switch --flake .#xiaomi-dandelion-headless --target-host dandelion
+```
+
+nyx builds it (cross, from `binfmt`'s `aarch64-linux`) and copies the store
+delta over the gadget — around 100 MiB for a one-module change, against 2.2 GiB
+for an image. `boot` instead of `switch` stages the generation for the next boot
+without touching the running one; the "do not know how to make this
+configuration bootable" warning is expected, because stage-1 picks the
+generation out of `/nix/var/nix/profiles/system` and the boot image is flashed
+separately. Rollback is `nix-env -p /nix/var/nix/profiles/system --rollback` on
+the device.
+
+Check `config.systemd.package` against what PID 1 is already running before
+using `switch`. `switch` runs `daemon-reexec`, and re-execing PID 1 across two
+different systemd builds hangs in `manager_new()`; when the paths differ, use
+`boot` and reboot.
+
+Reflash `recovery` only when the kernel, the initrd or the cmdline changed —
+`boot.img` is byte-identical across changes that touch only stage-2. Write a
+full image only to install onto a blank partition or to recover one.
+
+Everything that touches the device from stage-1 is a flake app. Each one refuses to run
 unless `HADAHAORHAV8YHB6` appears in the device's `/proc/cmdline`, checked before
 every destructive step rather than once at startup, because the device drops off
 the bus and returns between steps routinely.
