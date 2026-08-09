@@ -1,0 +1,29 @@
+
+
+
+
+
+  [1m[36mTHOMPSON[0m   [2mxiaomi redmi 9a . mt6765 . 2026-02-02 02:40:00[0m
+
+ [36mHOST  [0m [1mthompson[0m   linux 4.9.190   gen [33m21[0m   up 3h 22m
+ [36mLOAD  [0m 25.49 25.74 25.89   procs 4/366   [2m23 mt6765 vendor threads sit in D forever[0m
+
+ [36mCPU   [0m [32m[..........][0m   0%   8x 2.00GHz   soc 33C
+ [36mMEM   [0m [32m[#.........][0m   223M / 1.8G   [2mtop systemd-journal 108M  .tailscaled-wra 54M  postgres 30M  [0m
+ [36mSWAP  [0m [32m[..........][0m     0K / 937M   [2mzram holds 0K at 93.0x[0m
+ [36mDISK  [0m [32m[##........][0m   4.2G / 15.6G  [2memmc 20-30% used, normal[0m
+ [36mBATT  [0m [32m[#####.....][0m  53%  Full     4.319V  -90mA  32.9C  [2mfull, in 480mA[0m
+ [36mPANEL [0m on  [2m200 of 2047[0m
+
+ [36mNET   [0m rndis0      172.16.42.1/16       tailscale0  100.80.122.40/32
+        gateway     172.16.42.2          peers       8
+        [2mlistening   22 2222 5432 6379 52772 55923[0m
+
+ [36mSVC   [0m [1msshd       [0m [32mactive  [0m   472M  1 clients
+        [1mtailscaled [0m [32mactive  [0m    61M
+        [2mfailed      none[0m
+
+ [36mSSH   [0m root                   172.16.42.2:42898
+ [36mTTY   [0m root@tty1 since 02:30   luisnquin@pts/0 since 02:38   
+
+ [1mpower[0m screen   [1mhold power[0m menu[2m        every 5s[0m
