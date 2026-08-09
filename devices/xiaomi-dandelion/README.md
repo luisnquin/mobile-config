@@ -38,10 +38,15 @@ evidence that revision 1.39.0 is safe.
 | USB gadget: adb + RNDIS concurrently | works |
 | SSH as root over RNDIS, key only | works |
 | Stage-2 rootfs written to `userdata` | written and hash-verified, see below |
-| Stage-2 / switch_root | reached — USB tears down on cue, then nothing |
-| Stage-2 session config (TTY, sxmo) | **built, never observed to boot** |
+| Stage-2 / switch_root | works — `is-system-running` reports `running`, no failed units |
+| TTY session on `tty1` | works |
+| sxmo | builds, off by default — costs 1.6 GiB of closure, see `mobile.session.sxmo` |
+| Activating a new generation without a reflash | works — `nix run .#dandelion-switch`, guarded |
+| Bounded journal and store growth | works — `mobile.services.maintenance` |
 | Tailscale daemon | enrolled as `thompson`, rules install, reachable — but rides the cable, see below |
-| Touch, Wi-Fi, audio, modem, charging, suspend | **untested** |
+| Wi-Fi | **no driver** — the defconfig never builds one, `nmcli` reports `WIFI-HW missing` |
+| Touch, audio, modem, suspend | **untested** |
+| Charging | charges from a wall charger; net-drains on a PC port |
 | KMS / Wayland compositor | **impossible as-is**, see below |
 
 `boot` has never been written on the development unit. Neither have `dtbo`,
