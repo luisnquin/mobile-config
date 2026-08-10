@@ -24,6 +24,21 @@ in {
       default = false;
       description = "enable when SOC is Mediatek MT6765 / MT6762 (Helio P35, G25, G35)";
     };
+
+    kernelTree = mkOption {
+      type = types.enum ["vendor" "mainline"];
+      default = "vendor";
+      description = ''
+        Which MT6765 kernel lineage the device is being built against.
+
+        `vendor` is MediaTek's 4.9 tree, where the platform is `MACH_MT6765`
+        and the panel is driven by MediaTek's own LCM framework.
+
+        `mainline` is `ARCH_MEDIATEK`. The two are mutually exclusive, and
+        nearly everything asserted below only exists in one of them, so the
+        SoC-level configuration has to know which one it is talking about.
+      '';
+    };
   };
 
   config = mkIf cfg.mediatek-mt6765.enable {
@@ -31,26 +46,33 @@ in {
 
     # The downstream 4.9 tree has no DRM driver and no atomic modesetting. The
     # panel is driven by MediaTek's own LCM framework behind a legacy fbdev, and
-    # that fbdev does not repaint on its own after userspace writes.
-    mobile.quirks.fb-refresher.enable = true;
+    # that fbdev does not repaint on its own after userspace writes. Mainline
+    # reaches the same panel through simple-framebuffer, which the display
+    # controller scans out continuously.
+    mobile.quirks.fb-refresher.enable = cfg.mediatek-mt6765.kernelTree == "vendor";
 
     mobile.kernel.structuredConfig = [
       (helpers:
-        with helpers; {
-          # ARCH_MEDIATEK is the *mainline* MT65xx/MT81xx platform in this tree and
-          # is mutually exclusive with the vendor stack. Kconfig says so directly:
-          # PINCTRL_MT6765 depends on `PINCTRL && !ARCH_MEDIATEK && MACH_MT6765`.
-          # Enabling it also `select`s the mainline MTK_TIMER, which collides with
-          # the vendor mtk_apxgpt.c over `mtk_timer_clkevt_aee_dump`, and flips
-          # COMMON_CLK_MT8173 on by `default ARCH_MEDIATEK`, whose clkdbg_mt8173.c
-          # this fork deleted. Both are link/build failures, not warnings.
-          ARCH_MEDIATEK = no;
+        with helpers;
+          if cfg.mediatek-mt6765.kernelTree == "mainline"
+          then {
+            ARCH_MEDIATEK = yes;
+          }
+          else {
+            # ARCH_MEDIATEK is the *mainline* MT65xx/MT81xx platform in this tree and
+            # is mutually exclusive with the vendor stack. Kconfig says so directly:
+            # PINCTRL_MT6765 depends on `PINCTRL && !ARCH_MEDIATEK && MACH_MT6765`.
+            # Enabling it also `select`s the mainline MTK_TIMER, which collides with
+            # the vendor mtk_apxgpt.c over `mtk_timer_clkevt_aee_dump`, and flips
+            # COMMON_CLK_MT8173 on by `default ARCH_MEDIATEK`, whose clkdbg_mt8173.c
+            # this fork deleted. Both are link/build failures, not warnings.
+            ARCH_MEDIATEK = no;
 
-          # Set by dandelion_halium_defconfig; asserted here so a config
-          # regression fails evaluation instead of failing on the device.
-          MACH_MT6765 = yes;
-          MTK_LCM = yes;
-        })
+            # Set by dandelion_halium_defconfig; asserted here so a config
+            # regression fails evaluation instead of failing on the device.
+            MACH_MT6765 = yes;
+            MTK_LCM = yes;
+          })
     ];
   };
 }
