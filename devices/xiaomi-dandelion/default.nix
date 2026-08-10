@@ -29,6 +29,7 @@
     ../../modules/deploy-guard.nix
     ../../modules/maintenance.nix
     ../../modules/vendor-firmware.nix
+    ../../modules/connectivity
     ../../modules/console
     ../../modules/shell.nix
     ./display.nix
@@ -96,6 +97,11 @@
   # on the stock `vendor` partition. The kernel now has the drivers built in;
   # this is the other half.
   mobile.hardware.vendorFirmware.enable = true;
+
+  # And the third half: the drivers are built in and the firmware is on disk,
+  # but nothing starts the chip without the ioctl sequence in
+  # ../../modules/connectivity.
+  mobile.hardware.connectivity.enable = true;
 
   # The panel is not a phone screen any more, so it stops carrying a boot
   # console and starts carrying state. The power key becomes its on/off switch.

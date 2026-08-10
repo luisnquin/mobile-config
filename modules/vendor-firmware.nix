@@ -66,10 +66,23 @@
     # request_firmware() takes a bare name and the loader prefixes its own search
     # path. The `etc/wifi/` entries in the tarball are Android supplicant
     # overlays and are deliberately not installed.
+    # WMT_STEP.cfg is not on the stock vendor partition either, but asking for a
+    # file that is not there is not free: this kernel sets
+    # CONFIG_FW_LOADER_USER_HELPER_FALLBACK, so request_firmware() falls back to
+    # a userspace helper that nothing answers and blocks for its full 60 s
+    # timeout. Measured on a clean boot: the direct load fails at t=32.8 and
+    # `wmt_step_read_file` reports the miss at t=93.2, delaying the entire
+    # connectivity bring-up by that gap.
+    #
+    # STEP is a debug facility -- register pokes at named power-on trigger
+    # points -- so the correct content is none. `wmt_step_parse_data()` splits on
+    # "\r\n" and hands each line to a parser that ignores anything without a
+    # known keyword, so one newline is a valid file describing zero actions.
     installPhase = ''
       runHook preInstall
       mkdir -p $out/lib/firmware
       tar -C $out/lib/firmware --strip-components=1 -xf $src firmware
+      printf '\n' > $out/lib/firmware/WMT_STEP.cfg
       runHook postInstall
     '';
 
