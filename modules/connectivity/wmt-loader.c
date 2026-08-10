@@ -68,6 +68,13 @@
 
 #define MAX_PATCH_NUM 10
 
+// Exit statuses, read by RestartPreventExitStatus in ./default.nix. The
+// boundary is DO_MODULE_INIT: before it nothing is latched and a retry is
+// free, after it a retry silently succeeds over a chip that was never
+// initialised. Anything that is not one of these two is a crash.
+#define EXIT_RETRYABLE 1
+#define EXIT_LATCHED 2
+
 // WMT_PATCH_INFO, the ioctl argument for the non-ROM patch path.
 struct patch_info {
   uint32_t download_seq;
@@ -129,9 +136,20 @@ static int read_patch_header(const char *name, uint8_t address[4], uint32_t *typ
   return 0;
 }
 
+static int by_name(const void *a, const void *b) {
+  return strcmp((const char *)a, (const char *)b);
+}
+
 // Both patch families are named soc<n>_<n>_<kind>_<ip>_<fw>_hdr.bin, with the
 // kind fixed and the versions tracking the chip. Matching on the affixes keeps
 // this working across firmware revisions instead of pinning 1_1.
+//
+// The sort is not cosmetic. readdir returns ext4's htree hash order, and
+// handle_patch() turns this array's index into `download_seq`, a field the chip
+// receives -- so without it the download order is a property of the filesystem
+// and changes when the directory is rebuilt. Overflow is an error rather than a
+// truncation for the same reason: the first `max` entries in hash order are an
+// arbitrary subset, and sorting an arbitrary subset does not make it right.
 static int collect(const char *infix, char names[][NAME_MAX + 1], int max) {
   DIR *dir = opendir(firmware_dir);
   if (dir == NULL) {
@@ -140,9 +158,10 @@ static int collect(const char *infix, char names[][NAME_MAX + 1], int max) {
   }
 
   int found = 0;
+  int matched = 0;
   struct dirent *entry;
 
-  while (found < max && (entry = readdir(dir)) != NULL) {
+  while ((entry = readdir(dir)) != NULL) {
     size_t len = strlen(entry->d_name);
 
     if (len > NAME_MAX) continue;
@@ -150,10 +169,19 @@ static int collect(const char *infix, char names[][NAME_MAX + 1], int max) {
     if (strstr(entry->d_name, infix) == NULL) continue;
     if (len < 8 || strcmp(entry->d_name + len - 8, "_hdr.bin") != 0) continue;
 
-    strcpy(names[found++], entry->d_name);
+    matched++;
+    if (found < max) strcpy(names[found++], entry->d_name);
   }
 
   closedir(dir);
+
+  if (matched > max) {
+    fprintf(stderr, "%d files match %s in %s, room for %d\n", matched, infix,
+            firmware_dir, max);
+    return -1;
+  }
+
+  qsort(names, (size_t)found, NAME_MAX + 1, by_name);
   return found;
 }
 
@@ -262,28 +290,45 @@ static int power_on(void) {
   return 0;
 }
 
+// Returns 0, or the exit status the process should carry.
+//
+// The three ioctls are checked one at a time rather than chained. Two reasons,
+// and neither is style: only DO_MODULE_INIT latches, so the caller cannot pick
+// a retry policy without knowing which one failed; and the kernel logs the
+// individual sub-init results at PR_DBG behind a plain global, so it reports
+// only their sum. When it says -16, the step name printed here and the
+// driver-core line in dmesg are between them the whole diagnosis.
 static int detect(void) {
   int fd = open(DETECT_NODE, O_RDWR | O_CLOEXEC);
   if (fd < 0) {
     fprintf(stderr, "open %s: %s\n", DETECT_NODE, strerror(errno));
-    return -1;
+    return EXIT_RETRYABLE;
   }
 
   int chip_id = ioctl(fd, COMBO_IOCTL_GET_SOC_CHIP_ID);
   if (chip_id <= 0) {
     fprintf(stderr, "GET_SOC_CHIP_ID: %s\n", strerror(errno));
     close(fd);
-    return -1;
+    return EXIT_RETRYABLE;
   }
   printf("chip id 0x%04x\n", chip_id);
 
-  int ok = ioctl(fd, COMBO_IOCTL_SET_CHIP_ID, chip_id) == 0 &&
-           ioctl(fd, COMBO_IOCTL_MODULE_CLEANUP) == 0 &&
-           ioctl(fd, COMBO_IOCTL_DO_MODULE_INIT, chip_id) == 0;
-  if (!ok) {
-    fprintf(stderr, "wmtdetect init: %s\n", strerror(errno));
+  if (ioctl(fd, COMBO_IOCTL_SET_CHIP_ID, chip_id) < 0) {
+    fprintf(stderr, "SET_CHIP_ID: %s\n", strerror(errno));
     close(fd);
-    return -1;
+    return EXIT_RETRYABLE;
+  }
+
+  if (ioctl(fd, COMBO_IOCTL_MODULE_CLEANUP) < 0) {
+    fprintf(stderr, "MODULE_CLEANUP: %s\n", strerror(errno));
+    close(fd);
+    return EXIT_RETRYABLE;
+  }
+
+  if (ioctl(fd, COMBO_IOCTL_DO_MODULE_INIT, chip_id) < 0) {
+    fprintf(stderr, "DO_MODULE_INIT: %s\n", strerror(errno));
+    close(fd);
+    return EXIT_LATCHED;
   }
 
   close(fd);
@@ -295,24 +340,28 @@ int main(int argc, char **argv) {
 
   setvbuf(stdout, NULL, _IOLBF, 0);
 
-  if (detect() < 0) return 1;
+  int rc = detect();
+  if (rc != 0) return rc;
 
+  // Everything from here on is downstream of DO_MODULE_INIT, so every failure
+  // exits EXIT_LATCHED: the init cannot be replayed, and a restart would only
+  // re-reach this point with the flag already set.
   if (wait_for_node(WMT_NODE) < 0) {
     fprintf(stderr, "%s did not appear\n", WMT_NODE);
-    return 1;
+    return EXIT_LATCHED;
   }
 
   int fd = open(WMT_NODE, O_RDWR | O_CLOEXEC);
   if (fd < 0) {
     fprintf(stderr, "open %s: %s\n", WMT_NODE, strerror(errno));
-    return 1;
+    return EXIT_LATCHED;
   }
 
   // Reports "hif_info had been set!" and succeeds on a restart, so this stays
   // unconditional.
   if (ioctl(fd, WMT_IOCTL_SET_STP_MODE, STP_MODE) < 0) {
     fprintf(stderr, "SET_STP_MODE: %s\n", strerror(errno));
-    return 1;
+    return EXIT_LATCHED;
   }
 
   // The write below blocks in the kernel for as long as the core is waiting on
@@ -320,7 +369,7 @@ int main(int argc, char **argv) {
   pid_t child = fork();
   if (child < 0) {
     fprintf(stderr, "fork: %s\n", strerror(errno));
-    return 1;
+    return EXIT_LATCHED;
   }
   if (child == 0) {
     close(fd);
@@ -335,7 +384,7 @@ int main(int argc, char **argv) {
     if (poll(&pfd, 1, 200) < 0) {
       if (errno == EINTR) continue;
       fprintf(stderr, "poll: %s\n", strerror(errno));
-      return 1;
+      return EXIT_LATCHED;
     }
 
     if (pfd.revents & POLLIN) {
