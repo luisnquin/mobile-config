@@ -47,22 +47,64 @@
   # defconfig lineage (`perf` vs `halium`).
 
   # Normalized from `dandelion_halium_defconfig` by an out-of-tree
-  # `make olddefconfig` against the pinned source. One deviation from the vendor
-  # defconfig, and it is deliberate:
+  # `make olddefconfig` against the pinned source. Two deviations from the
+  # vendor defconfig, both deliberate:
   #
-  #   CONFIG_WLAN_DRV_BUILD_IN=y   (vendor: not set)
+  #   CONFIG_USB_USBNET=y                       (vendor: not set), with
+  #                                             CDCETHER, CDC_NCM, RNDIS_HOST
+  #                                             and IPHETH
+  #   CONFIG_FW_LOADER_USER_HELPER_FALLBACK=n   (vendor: y), and only because
+  #                                             patch 0008 removes the `select`
+  #                                             that pins it on
   #
-  # `drivers/misc/mediatek/connectivity/Makefile` descends into `wlan/adaptor/`,
-  # `wlan/core/gen4m/`, `common/`, `bt/`, `gps/` and `fmradio/` only under that
-  # symbol; with it unset the tree builds a connectivity adapter that adapts
-  # nothing, and `nmcli general` reports `WIFI-HW missing`. Droidian leaves it
-  # off because it loads the driver as an out-of-tree module built against this
-  # kernel, which is a build system this port does not have. The symbol is a
-  # plain `bool` with no dependencies (connectivity/Kconfig:374).
+  # `CONFIG_WLAN_DRV_BUILD_IN` is left at the vendor's `n`, which is not the
+  # obvious choice and was wrong here for a while. It gates
+  # `drivers/misc/mediatek/connectivity/Makefile`'s descent into `common/`,
+  # `wlan/adaptor/`, `wlan/core/gen4m/`, `bt/`, `gps/` and `fmradio/`, so
+  # turning it on does produce /dev/wmtdetect and a WMT stack -- but the copy
+  # under that switch is the one MediaTek abandoned in place, as the Makefile
+  # says above it: "Do Nothing, move to standalone repo". Built in, it powers
+  # the chip on and the CONNSYS MCU parks in ROM at 0x4fd0 forever, never
+  # reaching the 0x1D1E the driver polls for.
+  #
+  # What the switch leaves alone is `connadp.o`, built unconditionally from
+  # `common/connectivity_build_in_adapter.o` and `common/wmt_build_in_adapter.o`.
+  # That is not a leftover: it is the kernel-side half of the out-of-tree build,
+  # and every symbol the stock `wmt_drv.ko` imports resolves to it or to a
+  # driver outside this subtree (BTIF, EMI MPU, conn_md, aee). `gConEmiPhyBase`
+  # is exported from both it and `gen4m/gl_init.c`, which is what makes the two
+  # halves mutually exclusive by construction. So `n` is not "no driver", it is
+  # "the driver comes from vendor" -- the same arrangement stock Android uses,
+  # where /vendor/lib/modules ships wmt_drv.ko, wmt_chrdev_wifi.ko and
+  # wlan_drv_gen4m.ko against a 4.9.190 kernel from this same source lineage.
   #
   # Wi-Fi is the difference between a device that can be managed remotely and one
   # tethered to the build host: without it the tailnet's only route out is the
   # HTTP CONNECT tunnel on that host, over the same USB cable.
+  #
+  # `FW_LOADER_USER_HELPER_FALLBACK` turns every missing firmware file into a
+  # full 60 s wait on a userspace helper that no NixOS system runs. Two fire on
+  # this device -- WMT_STEP.cfg and novatek_ts_djn_fw.bin -- for about 105 s of
+  # boot spent blocking on nothing. `request_firmware()` still reads from
+  # `firmware_class.path`; only the helper fallback goes away. The line in
+  # config.aarch64 does nothing on its own: `MEDIATEK_SOLUTION` selects the
+  # symbol, and `select` cannot be overridden from a config file, so the
+  # `is not set` there is honoured only because patch 0008 deletes the select.
+  #
+  # `USB_USBNET` and its four class drivers are the host-side counterpart: a
+  # phone or a modem plugged into an OTG adapter enumerates as RNDIS, CDC ECM,
+  # NCM or (iOS) ipheth, and without these the device is recognised and bound to
+  # nothing. Nothing else is needed for the host role -- `usb20/Makefile` builds
+  # `musb_host.o` and `musb_virthub.o` unconditionally under `USB_MTK_HDRC`, and
+  # `CONFIG_USB_MTK_OTG=y` already supplies IDDIG cable detection and DRVVBUS.
+  # Generic `CONFIG_USB_OTG` is mainline musb's mechanism, not this tree's, and
+  # is deliberately left off: it sits on the gadget path that carries rndis0 and
+  # adb, which is the only way back into this device.
+  #
+  # The dongle drivers under `USB_NET_DRIVERS` are all pinned off rather than
+  # left at their `default y`. `USB_NET_AX8817X` alone `select`s PHYLIB, which
+  # drags the MDIO bus and twenty-five MII PHY drivers into a kernel with no
+  # MDIO bus at all -- `select` bypasses `depends on`, so nothing warns.
   #
   # This file is the *input* to the build, not the config the kernel is built
   # with. Mobile NixOS layers its structured config on top
@@ -97,6 +139,7 @@
   patches = [
     ../../../patches/linux/mt6765/0006-mtkfb-implement-fb_setcolreg.patch
     ../../../patches/linux/mt6765/0007-mtk-battery-keep-log-level-when-booted-from-recovery.patch
+    ../../../patches/linux/mt6765/0008-mediatek-drop-firmware-user-helper-fallback-select.patch
   ];
 
   # A 2024 compiler emits diagnostics this tree predates (-Warray-compare,

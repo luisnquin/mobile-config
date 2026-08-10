@@ -1,0 +1,46 @@
+From: dandelion port <none@localhost>
+Subject: [PATCH] mediatek: stop selecting FW_LOADER_USER_HELPER_FALLBACK
+
+The fallback turns a failed direct firmware load into a request handed to a
+userspace helper over uevent, and then a 60 s wait for an answer. That design
+belongs to Android, where ueventd answers it. NixOS runs no such helper, so on
+this port every fallback is 60 s of a probe thread parked on a completion that
+nothing will ever signal.
+
+Two fire on a clean boot, for roughly 105 s of the boot spent blocking:
+
+    t=32.77  Direct firmware load for WMT_STEP.cfg failed with error -2
+    t=93.15  wmt_step_read_file: request_firmware failed          (60.4 s)
+
+    t=28.02  Direct firmware load for novatek_ts_djn_fw.bin failed, error -2
+    t=72.67  update_firmware_request 321: firmware load failed, ret=-11  (44.6 s)
+
+The -11 in the second one is EAGAIN, which is what the helper path returns when
+its timeout expires -- the tell that these are the fallback and not the direct
+load, which had already failed 45 s earlier.
+
+    drivers/misc/mediatek/Kconfig:1
+        menuconfig MEDIATEK_SOLUTION
+                bool "MediaTek Properitary Configuration"
+                select FW_LOADER_USER_HELPER_FALLBACK
+
+`select` is unconditional and bypasses `depends on`, so the symbol cannot be
+turned off from a config file for as long as MEDIATEK_SOLUTION is set -- and
+MEDIATEK_SOLUTION is the master switch for the whole platform, not something
+this device can do without. Setting
+`# CONFIG_FW_LOADER_USER_HELPER_FALLBACK is not set` in the defconfig is
+silently reverted by `make oldconfig`; the line has to come out of the Kconfig.
+
+FW_LOADER_USER_HELPER itself is left on. Only the fallback goes: request_firmware()
+now fails immediately when the file is not on firmware_class.path, which is the
+answer it was always going to arrive at.
+
+--- a/drivers/misc/mediatek/Kconfig
++++ b/drivers/misc/mediatek/Kconfig
+@@ -1,6 +1,5 @@
+ menuconfig MEDIATEK_SOLUTION
+ 	bool "MediaTek Properitary Configuration"
+-	select FW_LOADER_USER_HELPER_FALLBACK
+ 	select I2C
+ 	help
+ 	  Check this to enable MediaTek properity configuration.
