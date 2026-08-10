@@ -314,6 +314,28 @@
     "systemd.log_target=kmsg"
     "systemd.log_level=info"
     "systemd.show_status=true"
+
+    # The VT blank timer defaults to 600 s and has to be off, because on this
+    # device nothing routinely unblanks it. Console blanking is cleared by
+    # `do_unblank_screen()`, reached from the vt keyboard handler or a KDSETMODE
+    # transition -- never by console *output*. The dashboard writes to tty1
+    # every five seconds and the framebuffer stays frozen anyway.
+    #
+    # It presents as a hardware fault and is not one. `vesa_blank_mode` is 0, so
+    # the timer soft-blanks: fbcon fills the framebuffer with the background and
+    # stops rendering, but `fb_blank` is never called. The backlight therefore
+    # stays lit at whatever level the panel last set, `/dev/vcs1` keeps updating
+    # with a live clock, `fb0/state` reads RUNNING and fbcon stays bound --
+    # while /dev/fb0 does not change by a single byte. On 2026-08-09 that cost
+    # an evening and two wrong root causes (a stale pan offset, then a stranded
+    # `ops->graphics`) before `/sys/module/kernel/parameters/consoleblank`
+    # was read and answered 600.
+    #
+    # `setterm --blank 0 >/dev/tty1` does not substitute for this: it left the
+    # parameter at 600. Recovering a screen already blanked this way needs a
+    # KD_GRAPHICS -> KD_TEXT cycle on tty1, which routes through
+    # `do_unblank_screen(1)`.
+    "consoleblank=0"
   ];
 
   # The one observation channel that does not depend on this port working.

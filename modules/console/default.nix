@@ -175,8 +175,14 @@ in {
 
     defaultBrightness = lib.mkOption {
       type = lib.types.ints.positive;
-      default = 200;
-      description = "Level restored when no previous level was recorded.";
+      default = 1200;
+      description = ''
+        Level restored when no previous level was recorded. Against this
+        panel's max_brightness of 2047 the old default of 200 was a tenth of
+        the range: legible in a dark room and not otherwise, which is a poor
+        thing to fall back to when the reason no level was recorded is usually
+        that something just restarted.
+      '';
     };
 
     keys = {
@@ -259,6 +265,29 @@ in {
 
     boot.kernel.sysctl = lib.mkIf cfg.quietConsole {"kernel.printk" = "3 4 1 7";};
 
+    # `consoleblank=0` on the cmdline is the real fix, but that only arrives with
+    # a flashed boot image, and a rootfs deploy has to be able to correct this on
+    # its own. Both sequences are written straight to the console rather than run
+    # through setterm: setterm resolves the terminal type before emitting
+    # anything, and with TERM unset -- which it is under systemd -- it silently
+    # emits nothing. That failure mode is invisible; the check is
+    # /sys/module/kernel/parameters/consoleblank, which must read 0.
+    #
+    #   ESC [ 9 ; 0 ]   blankinterval = 0, disarming the timer (vt.c case 9)
+    #   ESC [ 13 ]      poke_blanked_console(), for a console already blanked
+    systemd.services.console-noblank = {
+      description = "Disarm the VT blank timer";
+      wantedBy = ["multi-user.target"];
+      before = ["getty@tty1.service"];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        StandardOutput = "tty";
+        TTYPath = "/dev/tty1";
+        ExecStart = "${pkgs.runtimeShell} -c 'printf \"\\033[9;0]\\033[13]\"'";
+      };
+    };
+
     # Holds the evdev grab for the whole uptime, so the dashboard can come and
     # go with tty1's login shell without the keys changing hands. With nothing
     # connected the power key is still the on/off switch.
@@ -272,6 +301,26 @@ in {
         RestartSec = 5;
       };
     };
+
+    # The dashboard is a child of tty1's login shell, so it belongs to no unit
+    # and `switch-to-configuration` cannot replace it: a deploy leaves the
+    # previous generation's wrapper running indefinitely. On 2026-08-09 two
+    # generations' panels ran at once and drove the backlight to 0 and to 200
+    # alternately, a second or two apart, for hours.
+    #
+    # Retiring it by restarting the getty was tried and reverted. NixOS already
+    # owns `systemd.services."getty@tty1"` -- that is where tty1's autologin
+    # ExecStart is defined -- so adding restartTriggers with
+    # `overrideStrategy = "asDropin"` demoted the whole unit to a drop-in and
+    # left only the vendor template behind it, whose ExecStart is
+    # `-/usr/bin/agetty`. That path does not exist here, so the next start
+    # exited 203, Restart=always burned the start limit, and tty1 was left with
+    # no login at all. Restarting the getty by hand is safe; making a deploy do
+    # it through that attribute is not.
+    #
+    # Retire a stale dashboard with `systemctl restart getty@tty1` instead, and
+    # give it time: the stop can sit in final-sigterm for the full
+    # TimeoutStopSec before the login session lets go.
 
     services.logind.settings.Login = {
       HandlePowerKey = "ignore";
