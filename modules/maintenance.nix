@@ -76,6 +76,7 @@ in {
     nix.settings = {
       min-free = cfg.minFree;
       max-free = cfg.maxFree;
+      experimental-features = ["nix-command" "flakes"];
     };
 
     # Deliberately not nix.optimise. Hard-linking a 4.9 GiB store means reading
