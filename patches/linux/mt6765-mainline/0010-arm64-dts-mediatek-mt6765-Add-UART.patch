@@ -1,0 +1,43 @@
+From 8c2b363acaed41ac21aca79193514968aaa20a69 Mon Sep 17 00:00:00 2001
+From: Arseniy Velikanov <adomerlee@gmail.com>
+Date: Sun, 13 Aug 2023 21:02:23 +0400
+Subject: [PATCH 10/91] arm64: dts: mediatek: mt6765: Add UART
+
+Signed-off-by: Arseniy Velikanov <adomerlee@gmail.com>
+---
+ arch/arm64/boot/dts/mediatek/mt6765.dtsi | 22 ++++++++++++++++++++++
+ 1 file changed, 22 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/mediatek/mt6765.dtsi b/arch/arm64/boot/dts/mediatek/mt6765.dtsi
+index 44365a004..a4b577029 100644
+--- a/arch/arm64/boot/dts/mediatek/mt6765.dtsi
++++ b/arch/arm64/boot/dts/mediatek/mt6765.dtsi
+@@ -225,6 +225,28 @@ u2port: usb-phy@11210800 {
+             };
+         };
+ 
++        uart0: serial@11002000 {
++            compatible = "mediatek,mt6765-uart",
++                         "mediatek,mt6577-uart";
++            reg = <0 0x11002000 0 0x400>;
++            interrupts = <GIC_SPI 91 IRQ_TYPE_LEVEL_LOW>;
++            clocks = <&infracfg CLK_IFR_UART0>,
++                     <&infracfg CLK_IFR_AP_DMA>;
++            clock-names = "baud", "bus";
++            status = "disabled";
++        };
++
++        uart1: serial@11003000 {
++            compatible = "mediatek,mt6765-uart",
++                         "mediatek,mt6577-uart";
++            reg = <0 0x11003000 0 0x400>;
++            interrupts = <GIC_SPI 92 IRQ_TYPE_LEVEL_LOW>;
++            clocks = <&infracfg CLK_IFR_UART1>,
++                     <&infracfg CLK_IFR_AP_DMA>;
++            clock-names = "baud", "bus";
++            status = "disabled";
++        };
++
+         sysirq: intpol-controller@10200a80 {
+             compatible = "mediatek,mt6577-sysirq";
+             reg = <0 0x10200a80 0 0x50>; /* INTPOL */

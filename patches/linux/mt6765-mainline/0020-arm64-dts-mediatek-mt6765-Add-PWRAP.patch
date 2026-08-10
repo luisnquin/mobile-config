@@ -1,0 +1,32 @@
+From f8c4d305575597988ee9aa4cb632eeea1c748451 Mon Sep 17 00:00:00 2001
+From: Arseniy Velikanov <adomerlee@gmail.com>
+Date: Mon, 14 Aug 2023 23:02:28 +0400
+Subject: [PATCH 20/91] arm64: dts: mediatek: mt6765: Add PWRAP
+
+Signed-off-by: Arseniy Velikanov <adomerlee@gmail.com>
+---
+ arch/arm64/boot/dts/mediatek/mt6765.dtsi | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/mediatek/mt6765.dtsi b/arch/arm64/boot/dts/mediatek/mt6765.dtsi
+index a6841bc11..d05314d36 100644
+--- a/arch/arm64/boot/dts/mediatek/mt6765.dtsi
++++ b/arch/arm64/boot/dts/mediatek/mt6765.dtsi
+@@ -231,6 +231,17 @@ pio: pio@10005000 {
+             interrupts = <GIC_SPI 171 IRQ_TYPE_LEVEL_HIGH>;
+         };
+ 
++        pwrap: pwrap@1000d000 {
++            compatible = "mediatek,mt6765-pwrap";
++            reg = <0 0x1000d000 0 0x1000>;
++            reg-names = "pwrap";
++            interrupts = <GIC_SPI 179 IRQ_TYPE_LEVEL_HIGH>;
++            clocks = <&infracfg CLK_IFR_PMIC_AP>,
++                     <&topckgen CLK_TOP_CLK26M>;
++            clock-names = "wrap", "spi";
++            status = "disabled";
++        };
++
+         usb2: usb@11200000 {
+             compatible = "mediatek,mtk-musb";
+             reg = <0 0x11200000 0 0x1000>;

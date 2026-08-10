@@ -1,0 +1,22 @@
+From 425c8b954100c108c7bca2e191cd3de71f6319a6 Mon Sep 17 00:00:00 2001
+From: Arseniy Velikanov <adomerlee@gmail.com>
+Date: Fri, 18 Aug 2023 03:53:54 +0400
+Subject: [PATCH 59/91] mailbox: mtk-cmdq: Add MT6765 support
+
+Signed-off-by: Arseniy Velikanov <adomerlee@gmail.com>
+---
+ drivers/mailbox/mtk-cmdq-mailbox.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/mailbox/mtk-cmdq-mailbox.c b/drivers/mailbox/mtk-cmdq-mailbox.c
+index 5791f80f9..45e9a0ff5 100644
+--- a/drivers/mailbox/mtk-cmdq-mailbox.c
++++ b/drivers/mailbox/mtk-cmdq-mailbox.c
+@@ -783,6 +783,7 @@ static const struct gce_plat gce_plat_mt8195 = {
+ };
+ 
+ static const struct of_device_id cmdq_of_ids[] = {
++	{.compatible = "mediatek,mt6765-gce", .data = (void *)&gce_plat_mt8173},
+ 	{.compatible = "mediatek,mt6779-gce", .data = (void *)&gce_plat_mt6779},
+ 	{.compatible = "mediatek,mt8173-gce", .data = (void *)&gce_plat_mt8173},
+ 	{.compatible = "mediatek,mt8183-gce", .data = (void *)&gce_plat_mt8183},

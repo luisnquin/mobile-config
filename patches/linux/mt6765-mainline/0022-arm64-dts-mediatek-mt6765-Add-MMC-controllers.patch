@@ -1,0 +1,95 @@
+From 0527b5cac863ebae1a0df85a22a9edc3572d1931 Mon Sep 17 00:00:00 2001
+From: Arseniy Velikanov <adomerlee@gmail.com>
+Date: Tue, 15 Aug 2023 00:01:49 +0400
+Subject: [PATCH 22/91] arm64: dts: mediatek: mt6765: Add MMC controllers
+
+Signed-off-by: Arseniy Velikanov <adomerlee@gmail.com>
+---
+ arch/arm64/boot/dts/mediatek/mt6765.dtsi | 58 ++++++++++++++++++++++++
+ 1 file changed, 58 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/mediatek/mt6765.dtsi b/arch/arm64/boot/dts/mediatek/mt6765.dtsi
+index d05314d36..0cfa5ac14 100644
+--- a/arch/arm64/boot/dts/mediatek/mt6765.dtsi
++++ b/arch/arm64/boot/dts/mediatek/mt6765.dtsi
+@@ -6,8 +6,10 @@
+ #include <dt-bindings/interrupt-controller/irq.h>
+ #include <dt-bindings/interrupt-controller/arm-gic.h>
+ #include <dt-bindings/clock/mt6765-clk.h>
++#include <dt-bindings/pinctrl/mt65xx.h>
+ #include <dt-bindings/phy/phy.h>
+ 
++
+ / {
+     compatible = "mediatek,mt6765";
+     interrupt-parent = <&sysirq>;
+@@ -229,6 +231,35 @@ pio: pio@10005000 {
+             interrupt-controller;
+             #interrupt-cells = <2>;
+             interrupts = <GIC_SPI 171 IRQ_TYPE_LEVEL_HIGH>;
++
++            mmc0_pins_default: mmc0-default-pins {
++                pins-cmd-dat-clk-rst {
++                    pinmux = <(MTK_PIN_NO(129) | 2)>,
++                             <(MTK_PIN_NO(127) | 2)>,
++                             <(MTK_PIN_NO(126) | 2)>,
++                             <(MTK_PIN_NO(132) | 2)>,
++                             <(MTK_PIN_NO(123) | 2)>,
++                             <(MTK_PIN_NO(125) | 2)>,
++                             <(MTK_PIN_NO(128) | 2)>,
++                             <(MTK_PIN_NO(130) | 2)>,
++                             <(MTK_PIN_NO(122) | 2)>,
++                             <(MTK_PIN_NO(124) | 2)>,
++                             <(MTK_PIN_NO(133) | 2)>;
++                        drive-strength = <3>;
++                };
++            };
++
++            mmc1_pins_default: mmc1-default-pins {
++                pins-cmd-dat-clk {
++                    pinmux = <(MTK_PIN_NO(32) | 1)>,
++                             <(MTK_PIN_NO(34) | 1)>,
++                             <(MTK_PIN_NO(33) | 1)>,
++                             <(MTK_PIN_NO(31) | 1)>,
++                             <(MTK_PIN_NO(30) | 1)>,
++                             <(MTK_PIN_NO(29) | 1)>;
++                        drive-strength = <3>;
++                };
++            };
+         };
+ 
+         pwrap: pwrap@1000d000 {
+@@ -293,6 +324,33 @@ uart1: serial@11003000 {
+             status = "disabled";
+         };
+ 
++
++        mmc0: msdc@11230000 {
++            compatible = "mediatek,mt6765-mmc";
++            reg = <0 0x11230000 0 0x1000>;
++            interrupts = <GIC_SPI 79 IRQ_TYPE_LEVEL_LOW>;
++            clocks = <&infracfg CLK_IFR_MSDC0_SRC>,
++                     <&infracfg CLK_IFR_MSDC0>;
++            clock-names = "source", "hclk";
++            pinctrl-0 = <&mmc0_pins_default>;
++            pinctrl-1 = <&mmc0_pins_default>;
++            pinctrl-names = "default", "state_uhs";
++            status = "disabled";
++        };
++
++        mmc1: msdc@11240000 {
++            compatible = "mediatek,mt6765-mmc";
++            reg = <0 0x11240000 0 0x1000>;
++            interrupts = <GIC_SPI 80 IRQ_TYPE_LEVEL_LOW>;
++            clocks = <&infracfg CLK_IFR_MSDC1_SRC>,
++                    <&infracfg CLK_IFR_MSDC1>;
++            clock-names = "source", "hclk";
++            pinctrl-0 = <&mmc1_pins_default>;
++            pinctrl-1 = <&mmc1_pins_default>;
++            pinctrl-names = "default", "state_uhs";
++            status = "disabled";
++        };
++
+         sysirq: intpol-controller@10200a80 {
+             compatible = "mediatek,mt6577-sysirq";
+             reg = <0 0x10200a80 0 0x50>; /* INTPOL */

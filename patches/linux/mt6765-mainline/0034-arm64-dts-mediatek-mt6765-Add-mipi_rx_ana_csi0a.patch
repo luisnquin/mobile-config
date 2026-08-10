@@ -1,0 +1,27 @@
+From 040307731db908c66c31b7babfa9b2bf43cbe857 Mon Sep 17 00:00:00 2001
+From: Arseniy Velikanov <adomerlee@gmail.com>
+Date: Wed, 16 Aug 2023 06:55:03 +0400
+Subject: [PATCH 34/91] arm64: dts: mediatek: mt6765: Add mipi_rx_ana_csi0a
+
+Signed-off-by: Arseniy Velikanov <adomerlee@gmail.com>
+---
+ arch/arm64/boot/dts/mediatek/mt6765.dtsi | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/mediatek/mt6765.dtsi b/arch/arm64/boot/dts/mediatek/mt6765.dtsi
+index df6b4fe0a..975a1b73e 100644
+--- a/arch/arm64/boot/dts/mediatek/mt6765.dtsi
++++ b/arch/arm64/boot/dts/mediatek/mt6765.dtsi
+@@ -222,6 +222,12 @@ mmsys: syscon@14000000 {
+             #clock-cells = <1>;
+         };
+ 
++        mipi_rx_ana_csi0a: syscon@11c10000 {
++            compatible = "mediatek,mt6765-mipi0a", "syscon";
++            reg = <0 0x11c10000 0 0x1000>;
++            #clock-cells = <1>;
++        };
++
+         // TODO: Add reset support
+         watchdog: watchdog@10007000 {
+             compatible = "mediatek,mt6589-wdt";

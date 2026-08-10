@@ -1,0 +1,23 @@
+From 140a40ea9200a493705ada022af8550d13249f14 Mon Sep 17 00:00:00 2001
+From: Arseniy Velikanov <adomerlee@gmail.com>
+Date: Wed, 23 Aug 2023 01:17:53 +0400
+Subject: [PATCH 77/91] soc: mediatek: mtk-pmic-wrap: Drop CAP reset in mt6765
+
+Signed-off-by: Arseniy Velikanov <adomerlee@gmail.com>
+---
+ drivers/soc/mediatek/mtk-pmic-wrap.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/soc/mediatek/mtk-pmic-wrap.c b/drivers/soc/mediatek/mtk-pmic-wrap.c
+index 0bcd85826..824bf656c 100644
+--- a/drivers/soc/mediatek/mtk-pmic-wrap.c
++++ b/drivers/soc/mediatek/mtk-pmic-wrap.c
+@@ -2284,7 +2284,7 @@ static const struct pmic_wrapper_type pwrap_mt6765 = {
+ 	.int_en_all = 0xffffffff,
+ 	.spi_w = PWRAP_MAN_CMD_SPI_WRITE,
+ 	.wdt_src = PWRAP_WDT_SRC_MASK_ALL,
+-	.caps = PWRAP_CAP_RESET | PWRAP_CAP_DCM,
++	.caps = PWRAP_CAP_DCM,
+ 	.init_reg_clock = pwrap_common_init_reg_clock,
+ 	.init_soc_specific = NULL,
+ };

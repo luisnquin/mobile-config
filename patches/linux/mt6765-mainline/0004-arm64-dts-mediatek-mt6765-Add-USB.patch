@@ -1,0 +1,59 @@
+From 247a16ef6e161260404c7efd0a81ce583a9a895a Mon Sep 17 00:00:00 2001
+From: Arseniy Velikanov <adomerlee@gmail.com>
+Date: Sun, 13 Aug 2023 20:42:34 +0400
+Subject: [PATCH 04/91] arm64: dts: mediatek: mt6765: Add USB
+
+Signed-off-by: Arseniy Velikanov <adomerlee@gmail.com>
+---
+ arch/arm64/boot/dts/mediatek/mt6765.dtsi | 31 ++++++++++++++++++++++++
+ 1 file changed, 31 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/mediatek/mt6765.dtsi b/arch/arm64/boot/dts/mediatek/mt6765.dtsi
+index 74ae04f5b..cac4b354a 100644
+--- a/arch/arm64/boot/dts/mediatek/mt6765.dtsi
++++ b/arch/arm64/boot/dts/mediatek/mt6765.dtsi
+@@ -6,6 +6,7 @@
+ #include <dt-bindings/interrupt-controller/irq.h>
+ #include <dt-bindings/interrupt-controller/arm-gic.h>
+ #include <dt-bindings/clock/mt6765-clk.h>
++#include <dt-bindings/phy/phy.h>
+ 
+ / {
+     compatible = "mediatek,mt6765";
+@@ -170,6 +171,36 @@ topckgen: syscon@10000000 {
+             #clock-cells = <1>;
+         };
+ 
++
++        usb2: usb@11200000 {
++            compatible = "mediatek,mtk-musb";
++            reg = <0 0x11200000 0 0x1000>;
++            interrupts = <GIC_SPI 73 IRQ_TYPE_LEVEL_LOW>;
++            interrupt-names = "mc";
++            clocks = <&topckgen CLK_TOP_AXI_SEL>,
++                     <&topckgen CLK_TOP_AXI_SEL>,
++                     <&topckgen CLK_TOP_UNIVPLL3_D4>;
++            clock-names = "main", "mcu", "univpll";
++            phys = <&u2port PHY_TYPE_USB2>;
++            dr_mode = "peripheral";
++        };
++
++        u2phy: t-phy@11210000 {
++            compatible = "mediatek,mt6765-tphy",
++                         "mediatek,generic-tphy-v1";
++            reg = <0 0x11210000 0 0x800>;
++            #address-cells = <2>;
++            #size-cells = <2>;
++            ranges;
++
++            u2port: usb-phy@11210800 {
++                reg = <0 0x11210800 0 0x100>;
++                clocks = <&topckgen CLK_TOP_USB20_192M_D4>;
++                clock-names = "ref";
++                #phy-cells = <1>;
++            };
++        };
++
+         sysirq: intpol-controller@10200a80 {
+             compatible = "mediatek,mt6577-sysirq";
+             reg = <0 0x10200a80 0 0x50>; /* INTPOL */

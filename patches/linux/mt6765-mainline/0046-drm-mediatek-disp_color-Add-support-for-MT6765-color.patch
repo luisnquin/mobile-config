@@ -1,0 +1,43 @@
+From 70c5f2d413d3250e3364ff5ccd41138d2980fab0 Mon Sep 17 00:00:00 2001
+From: Arseniy Velikanov <adomerlee@gmail.com>
+Date: Wed, 16 Aug 2023 08:52:37 +0400
+Subject: [PATCH 46/91] drm/mediatek: disp_color: Add support for MT6765 color
+ processor
+
+Signed-off-by: Arseniy Velikanov <adomerlee@gmail.com>
+---
+ drivers/gpu/drm/mediatek/mtk_disp_color.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/drivers/gpu/drm/mediatek/mtk_disp_color.c b/drivers/gpu/drm/mediatek/mtk_disp_color.c
+index 39c7de4cd..575fbab89 100644
+--- a/drivers/gpu/drm/mediatek/mtk_disp_color.c
++++ b/drivers/gpu/drm/mediatek/mtk_disp_color.c
+@@ -17,6 +17,7 @@
+ 
+ #define DISP_COLOR_CFG_MAIN			0x0400
+ #define DISP_COLOR_START_MT2701			0x0f00
++#define DISP_COLOR_START_MT6765			0xfc00
+ #define DISP_COLOR_START_MT8167			0x0400
+ #define DISP_COLOR_START_MT8173			0x0c00
+ #define DISP_COLOR_START(comp)			((comp)->data->color_offset)
+@@ -136,6 +137,10 @@ static const struct mtk_disp_color_data mt2701_color_driver_data = {
+ 	.color_offset = DISP_COLOR_START_MT2701,
+ };
+ 
++static const struct mtk_disp_color_data mt6765_color_driver_data = {
++	.color_offset = DISP_COLOR_START_MT6765,
++};
++
+ static const struct mtk_disp_color_data mt8167_color_driver_data = {
+ 	.color_offset = DISP_COLOR_START_MT8167,
+ };
+@@ -147,6 +152,8 @@ static const struct mtk_disp_color_data mt8173_color_driver_data = {
+ static const struct of_device_id mtk_disp_color_driver_dt_match[] = {
+ 	{ .compatible = "mediatek,mt2701-disp-color",
+ 	  .data = &mt2701_color_driver_data},
++	{ .compatible = "mediatek,mt6765-disp-color",
++	  .data = &mt6765_color_driver_data},
+ 	{ .compatible = "mediatek,mt8167-disp-color",
+ 	  .data = &mt8167_color_driver_data},
+ 	{ .compatible = "mediatek,mt8173-disp-color",

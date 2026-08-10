@@ -1,0 +1,53 @@
+From b7c569edb5d2c0c93da9efec25ed28c0a4ee528c Mon Sep 17 00:00:00 2001
+From: Arseniy Velikanov <adomerlee@gmail.com>
+Date: Tue, 15 Aug 2023 00:13:26 +0400
+Subject: [PATCH 23/91] arm64: dts: mediatek: mt6762-tcl-bangkok_tf: Add MMC1
+
+Signed-off-by: Arseniy Velikanov <adomerlee@gmail.com>
+---
+ .../dts/mediatek/mt6762-tcl-bangkok_tf.dts    | 21 +++++++++++++++++++
+ 1 file changed, 21 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/mediatek/mt6762-tcl-bangkok_tf.dts b/arch/arm64/boot/dts/mediatek/mt6762-tcl-bangkok_tf.dts
+index 58920ea41..1544146eb 100644
+--- a/arch/arm64/boot/dts/mediatek/mt6762-tcl-bangkok_tf.dts
++++ b/arch/arm64/boot/dts/mediatek/mt6762-tcl-bangkok_tf.dts
+@@ -10,6 +10,7 @@
+ 
+ #include "mt6765.dtsi"
+ #include "mt6765-bl-quirks.dtsi"
++#include "mt6357.dtsi"
+ 
+ / {
+     model = "TCL A3";
+@@ -44,6 +45,10 @@ __symbols__ {
+     };
+ };
+ 
++&pwrap {
++    status = "okay";
++};
++
+ &usb2 {
+     status = "okay";
+ 
+@@ -56,3 +61,19 @@ usb_con: connector {
+ &u2phy {
+     status = "okay";
+ };
++
++&mmc1 {
++    status = "okay";
++
++    vmmc-supply = <&mt6357_vmch_reg>;
++    vqmmc-supply = <&mt6357_vmc_reg>;
++
++    bus-width = <4>;
++    max-frequency = <20000000>;
++    cap-sd-highspeed;
++    sd-uhs-sdr12;
++    sd-uhs-sdr25;
++    sd-uhs-sdr50;
++    sd-uhs-sdr104;
++    sd-uhs-ddr50;
++};

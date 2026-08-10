@@ -1,0 +1,24 @@
+From 883b2eeb5554001ed770cfc0e65911329814c387 Mon Sep 17 00:00:00 2001
+From: Arseniy Velikanov <adomerlee@gmail.com>
+Date: Wed, 16 Aug 2023 08:47:10 +0400
+Subject: [PATCH 45/91] drm/mediatek: disp_rdma: Add support for MT6765 display
+ RDMA
+
+Signed-off-by: Arseniy Velikanov <adomerlee@gmail.com>
+---
+ drivers/gpu/drm/mediatek/mtk_disp_rdma.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/gpu/drm/mediatek/mtk_disp_rdma.c b/drivers/gpu/drm/mediatek/mtk_disp_rdma.c
+index c9d41d75e..9a2ef70ce 100644
+--- a/drivers/gpu/drm/mediatek/mtk_disp_rdma.c
++++ b/drivers/gpu/drm/mediatek/mtk_disp_rdma.c
+@@ -403,6 +403,8 @@ static const struct mtk_disp_rdma_data mt8195_rdma_driver_data = {
+ static const struct of_device_id mtk_disp_rdma_driver_dt_match[] = {
+ 	{ .compatible = "mediatek,mt2701-disp-rdma",
+ 	  .data = &mt2701_rdma_driver_data},
++	{ .compatible = "mediatek,mt6765-disp-rdma",
++	  .data = &mt2701_rdma_driver_data},
+ 	{ .compatible = "mediatek,mt8173-disp-rdma",
+ 	  .data = &mt8173_rdma_driver_data},
+ 	{ .compatible = "mediatek,mt8183-disp-rdma",

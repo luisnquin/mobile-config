@@ -1,0 +1,35 @@
+From cca569e5ac35acc180388b44d93eefc91dbadfdd Mon Sep 17 00:00:00 2001
+From: Arseniy Velikanov <adomerlee@gmail.com>
+Date: Sun, 13 Aug 2023 20:36:28 +0400
+Subject: [PATCH 03/91] arm64: dts: mediatek: mt6765: Add topckgen clock
+
+Signed-off-by: Arseniy Velikanov <adomerlee@gmail.com>
+---
+ arch/arm64/boot/dts/mediatek/mt6765.dtsi | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/mediatek/mt6765.dtsi b/arch/arm64/boot/dts/mediatek/mt6765.dtsi
+index 42d7130aa..74ae04f5b 100644
+--- a/arch/arm64/boot/dts/mediatek/mt6765.dtsi
++++ b/arch/arm64/boot/dts/mediatek/mt6765.dtsi
+@@ -5,6 +5,7 @@
+ 
+ #include <dt-bindings/interrupt-controller/irq.h>
+ #include <dt-bindings/interrupt-controller/arm-gic.h>
++#include <dt-bindings/clock/mt6765-clk.h>
+ 
+ / {
+     compatible = "mediatek,mt6765";
+@@ -163,6 +164,12 @@ gic: interrupt-controller@0c000000 {
+             interrupt-controller;
+         };
+ 
++        topckgen: syscon@10000000 {
++            compatible = "mediatek,mt6765-topckgen", "syscon";
++            reg = <0 0x10000000 0 0x1000>;
++            #clock-cells = <1>;
++        };
++
+         sysirq: intpol-controller@10200a80 {
+             compatible = "mediatek,mt6577-sysirq";
+             reg = <0 0x10200a80 0 0x50>; /* INTPOL */

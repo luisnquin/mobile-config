@@ -1,0 +1,32 @@
+From fd4112fc5e5749abc68856aac323545800915619 Mon Sep 17 00:00:00 2001
+From: Arseniy Velikanov <adomerlee@gmail.com>
+Date: Wed, 16 Aug 2023 12:33:12 +0400
+Subject: [PATCH 57/91] arm64: dts: mediatek: mt6765: Add efuse
+
+Signed-off-by: Arseniy Velikanov <adomerlee@gmail.com>
+---
+ arch/arm64/boot/dts/mediatek/mt6765.dtsi | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/mediatek/mt6765.dtsi b/arch/arm64/boot/dts/mediatek/mt6765.dtsi
+index 47635e805..51da898d5 100644
+--- a/arch/arm64/boot/dts/mediatek/mt6765.dtsi
++++ b/arch/arm64/boot/dts/mediatek/mt6765.dtsi
+@@ -636,6 +636,17 @@ auxadc: auxadc@11001000 {
+             status = "disabled";
+         };
+ 
++        efuse: efuse@11c50000 {
++            compatible = "mediatek,mt6765-efuse";
++            reg = <0 0x11c50000 0 0x1000>;
++            #address-cells = <1>;
++            #size-cells = <1>;
++
++            thermal_calibration: calib@190 {
++                reg = <0x190 0xc>;
++            };
++        };
++
+         uart0: serial@11002000 {
+             compatible = "mediatek,mt6765-uart",
+                          "mediatek,mt6577-uart";

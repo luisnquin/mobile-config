@@ -1,0 +1,25 @@
+From ddb3d17f238922ef29b1cd38975d51c9b4ff27f6 Mon Sep 17 00:00:00 2001
+From: Arseniy Velikanov <adomerlee@gmail.com>
+Date: Wed, 16 Aug 2023 12:17:45 +0400
+Subject: [PATCH 54/91] mt6765_defconfig: Enable MTK thermals
+
+Signed-off-by: Arseniy Velikanov <adomerlee@gmail.com>
+---
+ arch/arm64/configs/mt6765_defconfig | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm64/configs/mt6765_defconfig b/arch/arm64/configs/mt6765_defconfig
+index 4cb5ba164..bca605641 100644
+--- a/arch/arm64/configs/mt6765_defconfig
++++ b/arch/arm64/configs/mt6765_defconfig
+@@ -3288,8 +3288,8 @@ CONFIG_THERMAL_EMULATION=y
+ # Mediatek thermal drivers
+ #
+ CONFIG_MTK_THERMAL=y
+-# CONFIG_MTK_SOC_THERMAL is not set
+-# CONFIG_MTK_LVTS_THERMAL is not set
++CONFIG_MTK_SOC_THERMAL=y
++CONFIG_MTK_LVTS_THERMAL=y
+ # end of Mediatek thermal drivers
+ 
+ # CONFIG_GENERIC_ADC_THERMAL is not set

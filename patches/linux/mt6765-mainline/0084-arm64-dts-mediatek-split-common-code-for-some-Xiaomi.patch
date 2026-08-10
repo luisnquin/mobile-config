@@ -1,0 +1,123 @@
+From 325cacb8f48c5fe79903abf0b987413d7fdd835d Mon Sep 17 00:00:00 2001
+From: Ookiineko <chiisaineko@protonmail.com>
+Date: Tue, 31 Oct 2023 22:44:07 +0800
+Subject: [PATCH 84/91] arm64: dts: mediatek: split common code for some Xiaomi
+ MT6765 devices
+
+* garden includes: dandelion, angelica, angelican, angelicain, cattail
+
+Signed-off-by: Ookiineko <chiisaineko@protonmail.com>
+---
+ .../dts/mediatek/mt6762g-xiaomi-dandelion.dts | 41 +----------------
+ .../mediatek/mt6765-xiaomi-garden-common.dtsi | 46 +++++++++++++++++++
+ 2 files changed, 47 insertions(+), 40 deletions(-)
+ create mode 100644 arch/arm64/boot/dts/mediatek/mt6765-xiaomi-garden-common.dtsi
+
+diff --git a/arch/arm64/boot/dts/mediatek/mt6762g-xiaomi-dandelion.dts b/arch/arm64/boot/dts/mediatek/mt6762g-xiaomi-dandelion.dts
+index 940c67b82..dbc45939e 100644
+--- a/arch/arm64/boot/dts/mediatek/mt6762g-xiaomi-dandelion.dts
++++ b/arch/arm64/boot/dts/mediatek/mt6762g-xiaomi-dandelion.dts
+@@ -8,9 +8,7 @@
+ 
+ /dts-v1/;
+ 
+-#include "mt6765.dtsi"
+-#include "mt6765-bl-quirks.dtsi"
+-#include "mt6357.dtsi"
++#include "mt6765-xiaomi-garden-common.dtsi"
+ 
+ / {
+     model = "Xiaomi Redmi 9A";
+@@ -45,40 +43,3 @@ __symbols__ {
+     };
+ 
+ };
+-
+-&pwrap {
+-    status = "okay";
+-};
+-
+-&usb2 {
+-    status = "okay";
+-
+-    usb_con: connector {
+-        compatible = "usb-b-connector";
+-        type = "micro";
+-    };
+-};
+-
+-&u2phy {
+-    status = "okay";
+-};
+-
+-&u2port {
+-    clocks = <&topckgen CLK_TOP_USB20_48M_EN>;
+-};
+-
+-&mmc1 {
+-    status = "okay";
+-
+-    vmmc-supply = <&mt6357_vmch_reg>;
+-    vqmmc-supply = <&mt6357_vmc_reg>;
+-
+-    bus-width = <4>;
+-    max-frequency = <200000000>;
+-    cap-sd-highspeed;
+-    sd-uhs-sdr12;
+-    sd-uhs-sdr25;
+-    sd-uhs-sdr50;
+-    sd-uhs-sdr104;
+-    sd-uhs-ddr50;
+-};
+diff --git a/arch/arm64/boot/dts/mediatek/mt6765-xiaomi-garden-common.dtsi b/arch/arm64/boot/dts/mediatek/mt6765-xiaomi-garden-common.dtsi
+new file mode 100644
+index 000000000..979e32683
+--- /dev/null
++++ b/arch/arm64/boot/dts/mediatek/mt6765-xiaomi-garden-common.dtsi
+@@ -0,0 +1,46 @@
++// SPDX-License-Identifier: (GPL-2.0 OR MIT)
++/*
++ * Copyright (c) 2023 Arseniy Velikanov <adomerlee@gmail.com>
++ * Copyright (C) 2023 Brandon Boese
++ */
++
++#include "mt6765.dtsi"
++#include "mt6765-bl-quirks.dtsi"
++#include "mt6357.dtsi"
++
++&pwrap {
++    status = "okay";
++};
++
++&usb2 {
++    status = "okay";
++
++    usb_con: connector {
++        compatible = "usb-b-connector";
++        type = "micro";
++    };
++};
++
++&u2phy {
++    status = "okay";
++};
++
++&u2port {
++    clocks = <&topckgen CLK_TOP_USB20_48M_EN>;
++};
++
++&mmc1 {
++    status = "okay";
++
++    vmmc-supply = <&mt6357_vmch_reg>;
++    vqmmc-supply = <&mt6357_vmc_reg>;
++
++    bus-width = <4>;
++    max-frequency = <200000000>;
++    cap-sd-highspeed;
++    sd-uhs-sdr12;
++    sd-uhs-sdr25;
++    sd-uhs-sdr50;
++    sd-uhs-sdr104;
++    sd-uhs-ddr50;
++};

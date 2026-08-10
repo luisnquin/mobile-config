@@ -1,0 +1,39 @@
+From 9e743251a483222acde3584f3d178b363130bb2f Mon Sep 17 00:00:00 2001
+From: Dinolek <18579460+Dinolek@users.noreply.github.com>
+Date: Tue, 31 Oct 2023 21:37:05 +0800
+Subject: [PATCH 83/91] arm64: dts: mediatek: mt6762g-xiaomi-dandelion: enable
+ USB
+
+Signed-off-by: Ookiineko <chiisaineko@protonmail.com>
+---
+ .../dts/mediatek/mt6762g-xiaomi-dandelion.dts   | 17 +++++++++++++++++
+ 1 file changed, 17 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/mediatek/mt6762g-xiaomi-dandelion.dts b/arch/arm64/boot/dts/mediatek/mt6762g-xiaomi-dandelion.dts
+index 28fef175b..940c67b82 100644
+--- a/arch/arm64/boot/dts/mediatek/mt6762g-xiaomi-dandelion.dts
++++ b/arch/arm64/boot/dts/mediatek/mt6762g-xiaomi-dandelion.dts
+@@ -50,6 +50,23 @@ &pwrap {
+     status = "okay";
+ };
+ 
++&usb2 {
++    status = "okay";
++
++    usb_con: connector {
++        compatible = "usb-b-connector";
++        type = "micro";
++    };
++};
++
++&u2phy {
++    status = "okay";
++};
++
++&u2port {
++    clocks = <&topckgen CLK_TOP_USB20_48M_EN>;
++};
++
+ &mmc1 {
+     status = "okay";
+ 

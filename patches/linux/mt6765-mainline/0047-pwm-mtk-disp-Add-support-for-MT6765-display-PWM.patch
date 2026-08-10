@@ -1,0 +1,22 @@
+From 66f55321a72573107cab742b842fc2162f533708 Mon Sep 17 00:00:00 2001
+From: Arseniy Velikanov <adomerlee@gmail.com>
+Date: Wed, 16 Aug 2023 08:54:21 +0400
+Subject: [PATCH 47/91] pwm: mtk-disp: Add support for MT6765 display PWM
+
+Signed-off-by: Arseniy Velikanov <adomerlee@gmail.com>
+---
+ drivers/pwm/pwm-mtk-disp.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/pwm/pwm-mtk-disp.c b/drivers/pwm/pwm-mtk-disp.c
+index bafd6b619..099306efa 100644
+--- a/drivers/pwm/pwm-mtk-disp.c
++++ b/drivers/pwm/pwm-mtk-disp.c
+@@ -298,6 +298,7 @@ static const struct of_device_id mtk_disp_pwm_of_match[] = {
+ 	{ .compatible = "mediatek,mt2701-disp-pwm", .data = &mt2701_pwm_data},
+ 	{ .compatible = "mediatek,mt6595-disp-pwm", .data = &mt8173_pwm_data},
+ 	{ .compatible = "mediatek,mt8173-disp-pwm", .data = &mt8173_pwm_data},
++	{ .compatible = "mediatek,mt6765-disp-pwm", .data = &mt8183_pwm_data},
+ 	{ .compatible = "mediatek,mt8183-disp-pwm", .data = &mt8183_pwm_data},
+ 	{ }
+ };

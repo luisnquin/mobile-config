@@ -1,0 +1,158 @@
+From 8da3592b66aeb3ec2e681fcbd178357fda0a10d1 Mon Sep 17 00:00:00 2001
+From: dandelion-port <noreply@localhost>
+Date: Mon, 10 Aug 2026 11:51:10 -0500
+Subject: [PATCH 90/91] pmdomain: mediatek: mt6765: port to the bp_cfg
+ bus-protection API
+
+The separate .bp_infracfg/.bp_smi arrays were merged into a single .bp_cfg
+whose entries name their block, and BUS_PROT_WR() gained a leading _hwip
+argument. Add the scpsys_bus_prot_blocks_mt6765 table the driver now
+dereferences.
+---
+ drivers/pmdomain/mediatek/mt6765-pm-domains.h | 64 ++++++++++---------
+ 1 file changed, 33 insertions(+), 31 deletions(-)
+
+diff --git a/drivers/pmdomain/mediatek/mt6765-pm-domains.h b/drivers/pmdomain/mediatek/mt6765-pm-domains.h
+index c23b7f32e..0b08627a3 100644
+--- a/drivers/pmdomain/mediatek/mt6765-pm-domains.h
++++ b/drivers/pmdomain/mediatek/mt6765-pm-domains.h
+@@ -10,6 +10,10 @@
+  * MT6765 power domain support
+  */
+ 
++static enum scpsys_bus_prot_block scpsys_bus_prot_blocks_mt6765[] = {
++	BUS_PROT_BLOCK_INFRA, BUS_PROT_BLOCK_SMI
++};
++
+ static const struct scpsys_domain_data scpsys_domain_data_mt6765[] = {
+ 	[MT6765_POWER_DOMAIN_MD1] = {
+ 		.name = "md1",
+@@ -19,12 +23,12 @@ static const struct scpsys_domain_data scpsys_domain_data_mt6765[] = {
+ 		.pwr_sta2nd_offs = 0x184,
+ 		.sram_pdn_bits = GENMASK(8, 8),
+ 		.sram_pdn_ack_bits = 0,
+-		.bp_infracfg = {
+-			BUS_PROT_WR(MT6765_TOP_AXI_PROT_EN_MD1, MT8183_TOP_AXI_PROT_EN_SET,
++		.bp_cfg = {
++			BUS_PROT_WR(INFRA, MT6765_TOP_AXI_PROT_EN_MD1, MT8183_TOP_AXI_PROT_EN_SET,
+ 				    MT8183_TOP_AXI_PROT_EN_CLR, MT8183_TOP_AXI_PROT_EN_STA1),
+-			BUS_PROT_WR(MT6765_TOP_AXI_PROT_EN_MD1_2ND, MT8183_TOP_AXI_PROT_EN_SET,
++			BUS_PROT_WR(INFRA, MT6765_TOP_AXI_PROT_EN_MD1_2ND, MT8183_TOP_AXI_PROT_EN_SET,
+ 				    MT8183_TOP_AXI_PROT_EN_CLR, MT8183_TOP_AXI_PROT_EN_STA1),
+-			BUS_PROT_WR(MT6765_TOP_AXI_PROT_EN_1_MD1, MT8183_TOP_AXI_PROT_EN_1_SET,
++			BUS_PROT_WR(INFRA, MT6765_TOP_AXI_PROT_EN_1_MD1, MT8183_TOP_AXI_PROT_EN_1_SET,
+ 				    MT8183_TOP_AXI_PROT_EN_1_CLR, MT8183_TOP_AXI_PROT_EN_STA1_1),
+ 		},
+ 	},
+@@ -36,12 +40,12 @@ static const struct scpsys_domain_data scpsys_domain_data_mt6765[] = {
+ 		.pwr_sta2nd_offs = 0x184,
+ 		.sram_pdn_bits = 0,
+ 		.sram_pdn_ack_bits = 0,
+-		.bp_infracfg = {
+-			BUS_PROT_WR(MT6765_TOP_AXI_PROT_EN_CONN, MT8183_TOP_AXI_PROT_EN_SET,
++		.bp_cfg = {
++			BUS_PROT_WR(INFRA, MT6765_TOP_AXI_PROT_EN_CONN, MT8183_TOP_AXI_PROT_EN_SET,
+ 				    MT8183_TOP_AXI_PROT_EN_CLR, MT8183_TOP_AXI_PROT_EN_STA1),
+-			BUS_PROT_WR(MT6765_TOP_AXI_PROT_EN_1_CONN, MT8183_TOP_AXI_PROT_EN_1_SET,
++			BUS_PROT_WR(INFRA, MT6765_TOP_AXI_PROT_EN_1_CONN, MT8183_TOP_AXI_PROT_EN_1_SET,
+ 				    MT8183_TOP_AXI_PROT_EN_1_CLR, MT8183_TOP_AXI_PROT_EN_STA1_1),
+-			BUS_PROT_WR(MT6765_TOP_AXI_PROT_EN_CONN_2ND, MT8183_TOP_AXI_PROT_EN_SET,
++			BUS_PROT_WR(INFRA, MT6765_TOP_AXI_PROT_EN_CONN_2ND, MT8183_TOP_AXI_PROT_EN_SET,
+ 				    MT8183_TOP_AXI_PROT_EN_CLR, MT8183_TOP_AXI_PROT_EN_STA1),
+ 		},
+ 	},
+@@ -53,12 +57,12 @@ static const struct scpsys_domain_data scpsys_domain_data_mt6765[] = {
+ 		.pwr_sta2nd_offs = 0x184,
+ 		.sram_pdn_bits = GENMASK(11, 8),
+ 		.sram_pdn_ack_bits = GENMASK(15, 12),
+-		.bp_infracfg = {
+-			BUS_PROT_WR(MT6765_TOP_AXI_PROT_EN_DPY, MT8183_TOP_AXI_PROT_EN_SET,
++		.bp_cfg = {
++			BUS_PROT_WR(INFRA, MT6765_TOP_AXI_PROT_EN_DPY, MT8183_TOP_AXI_PROT_EN_SET,
+ 				    MT8183_TOP_AXI_PROT_EN_CLR, MT8183_TOP_AXI_PROT_EN_STA1),
+-			BUS_PROT_WR(MT6765_TOP_AXI_PROT_EN_1_DPY, MT8183_TOP_AXI_PROT_EN_1_SET,
++			BUS_PROT_WR(INFRA, MT6765_TOP_AXI_PROT_EN_1_DPY, MT8183_TOP_AXI_PROT_EN_1_SET,
+ 				    MT8183_TOP_AXI_PROT_EN_1_CLR, MT8183_TOP_AXI_PROT_EN_STA1_1),
+-			BUS_PROT_WR(MT6765_TOP_AXI_PROT_EN_DPY_2ND, MT8183_TOP_AXI_PROT_EN_SET,
++			BUS_PROT_WR(INFRA, MT6765_TOP_AXI_PROT_EN_DPY_2ND, MT8183_TOP_AXI_PROT_EN_SET,
+ 				    MT8183_TOP_AXI_PROT_EN_CLR, MT8183_TOP_AXI_PROT_EN_STA1),
+ 		},
+ 	},
+@@ -70,14 +74,14 @@ static const struct scpsys_domain_data scpsys_domain_data_mt6765[] = {
+ 		.pwr_sta2nd_offs = 0x184,
+ 		.sram_pdn_bits = GENMASK(8, 8),
+ 		.sram_pdn_ack_bits = GENMASK(12, 12),
+-		.bp_infracfg = {
+-			BUS_PROT_WR(MT6765_TOP_AXI_PROT_EN_1_DISP, MT8183_TOP_AXI_PROT_EN_1_SET,
++		.bp_cfg = {
++			BUS_PROT_WR(INFRA, MT6765_TOP_AXI_PROT_EN_1_DISP, MT8183_TOP_AXI_PROT_EN_1_SET,
+ 				    MT8183_TOP_AXI_PROT_EN_1_CLR, MT8183_TOP_AXI_PROT_EN_STA1_1),
+-			BUS_PROT_WR(MT6765_TOP_AXI_PROT_EN_1_DISP_2ND, MT8183_TOP_AXI_PROT_EN_1_SET,
++			BUS_PROT_WR(INFRA, MT6765_TOP_AXI_PROT_EN_1_DISP_2ND, MT8183_TOP_AXI_PROT_EN_1_SET,
+ 				    MT8183_TOP_AXI_PROT_EN_1_CLR, MT8183_TOP_AXI_PROT_EN_STA1_1),
+-			BUS_PROT_WR(MT6765_TOP_AXI_PROT_EN_DISP, MT8183_TOP_AXI_PROT_EN_SET,
++			BUS_PROT_WR(INFRA, MT6765_TOP_AXI_PROT_EN_DISP, MT8183_TOP_AXI_PROT_EN_SET,
+ 				    MT8183_TOP_AXI_PROT_EN_CLR, MT8183_TOP_AXI_PROT_EN_STA1),
+-			BUS_PROT_WR(MT6765_TOP_AXI_PROT_EN_DISP_2ND, MT8183_TOP_AXI_PROT_EN_SET,
++			BUS_PROT_WR(INFRA, MT6765_TOP_AXI_PROT_EN_DISP_2ND, MT8183_TOP_AXI_PROT_EN_SET,
+ 				    MT8183_TOP_AXI_PROT_EN_CLR, MT8183_TOP_AXI_PROT_EN_STA1),
+ 		},
+ 	},
+@@ -89,10 +93,10 @@ static const struct scpsys_domain_data scpsys_domain_data_mt6765[] = {
+ 		.pwr_sta2nd_offs = 0x184,
+ 		.sram_pdn_bits = GENMASK(8, 8),
+ 		.sram_pdn_ack_bits = GENMASK(12, 12),
+-		.bp_infracfg = {
+-			BUS_PROT_WR(MT6765_TOP_AXI_PROT_EN_MFG, MT8183_TOP_AXI_PROT_EN_SET,
++		.bp_cfg = {
++			BUS_PROT_WR(INFRA, MT6765_TOP_AXI_PROT_EN_MFG, MT8183_TOP_AXI_PROT_EN_SET,
+ 				    MT8183_TOP_AXI_PROT_EN_CLR, MT8183_TOP_AXI_PROT_EN_STA1),
+-			BUS_PROT_WR(MT6765_TOP_AXI_PROT_EN_MFG_2ND, MT8183_TOP_AXI_PROT_EN_SET,
++			BUS_PROT_WR(INFRA, MT6765_TOP_AXI_PROT_EN_MFG_2ND, MT8183_TOP_AXI_PROT_EN_SET,
+ 				    MT8183_TOP_AXI_PROT_EN_CLR, MT8183_TOP_AXI_PROT_EN_STA1),
+ 		},
+ 	},
+@@ -104,12 +108,10 @@ static const struct scpsys_domain_data scpsys_domain_data_mt6765[] = {
+ 		.pwr_sta2nd_offs = 0x184,
+ 		.sram_pdn_bits = GENMASK(8, 8),
+ 		.sram_pdn_ack_bits = GENMASK(12, 12),
+-		.bp_infracfg = {
+-			BUS_PROT_WR(MT6765_TOP_AXI_PROT_EN_1_ISP, MT8183_TOP_AXI_PROT_EN_1_SET,
++		.bp_cfg = {
++			BUS_PROT_WR(INFRA, MT6765_TOP_AXI_PROT_EN_1_ISP, MT8183_TOP_AXI_PROT_EN_1_SET,
+ 				    MT8183_TOP_AXI_PROT_EN_1_CLR, MT8183_TOP_AXI_PROT_EN_STA1_1),
+-		},
+-		.bp_smi = {
+-			BUS_PROT_WR(MT8183_SMI_COMMON_SMI_CLAMP_ISP,
++			BUS_PROT_WR(SMI, MT8183_SMI_COMMON_SMI_CLAMP_ISP,
+ 				    MT8183_SMI_COMMON_CLAMP_EN_SET,
+ 				    MT8183_SMI_COMMON_CLAMP_EN_CLR,
+ 				    MT8183_SMI_COMMON_CLAMP_EN),
+@@ -151,14 +153,12 @@ static const struct scpsys_domain_data scpsys_domain_data_mt6765[] = {
+ 		.pwr_sta2nd_offs = 0x184,
+ 		.sram_pdn_bits = GENMASK(9, 8),
+ 		.sram_pdn_ack_bits = GENMASK(13, 12),
+-		.bp_infracfg = {
+-			BUS_PROT_WR(MT6765_TOP_AXI_PROT_EN_1_CAM, MT8183_TOP_AXI_PROT_EN_1_SET,
++		.bp_cfg = {
++			BUS_PROT_WR(INFRA, MT6765_TOP_AXI_PROT_EN_1_CAM, MT8183_TOP_AXI_PROT_EN_1_SET,
+ 				    MT8183_TOP_AXI_PROT_EN_1_CLR, MT8183_TOP_AXI_PROT_EN_STA1_1),
+-			BUS_PROT_WR(MT6765_TOP_AXI_PROT_EN_CAM, MT8183_TOP_AXI_PROT_EN_SET,
++			BUS_PROT_WR(INFRA, MT6765_TOP_AXI_PROT_EN_CAM, MT8183_TOP_AXI_PROT_EN_SET,
+ 				    MT8183_TOP_AXI_PROT_EN_CLR, MT8183_TOP_AXI_PROT_EN_STA1),
+-		},
+-		.bp_smi = {
+-			BUS_PROT_WR(MT6765_SMI_COMMON_SMI_CLAMP_CAM,
++			BUS_PROT_WR(SMI, MT6765_SMI_COMMON_SMI_CLAMP_CAM,
+ 				    MT8183_SMI_COMMON_CLAMP_EN_SET,
+ 				    MT8183_SMI_COMMON_CLAMP_EN_CLR,
+ 				    MT8183_SMI_COMMON_CLAMP_EN),
+@@ -178,6 +178,8 @@ static const struct scpsys_domain_data scpsys_domain_data_mt6765[] = {
+ static const struct scpsys_soc_data mt6765_scpsys_data = {
+ 	.domains_data = scpsys_domain_data_mt6765,
+ 	.num_domains = ARRAY_SIZE(scpsys_domain_data_mt6765),
++	.bus_prot_blocks = scpsys_bus_prot_blocks_mt6765,
++	.num_bus_prot_blocks = ARRAY_SIZE(scpsys_bus_prot_blocks_mt6765),
+ };
+ 
+ #endif /* __MT6765_PM_DOMAINS_H */

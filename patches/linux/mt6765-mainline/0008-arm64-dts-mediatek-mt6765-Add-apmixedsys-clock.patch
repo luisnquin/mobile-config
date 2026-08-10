@@ -1,0 +1,27 @@
+From 23144c60c2c56aab38e4c522501b442559e3b7a9 Mon Sep 17 00:00:00 2001
+From: Arseniy Velikanov <adomerlee@gmail.com>
+Date: Sun, 13 Aug 2023 20:53:59 +0400
+Subject: [PATCH 08/91] arm64: dts: mediatek: mt6765: Add apmixedsys clock
+
+Signed-off-by: Arseniy Velikanov <adomerlee@gmail.com>
+---
+ arch/arm64/boot/dts/mediatek/mt6765.dtsi | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/mediatek/mt6765.dtsi b/arch/arm64/boot/dts/mediatek/mt6765.dtsi
+index e6540c2d7..52b15762b 100644
+--- a/arch/arm64/boot/dts/mediatek/mt6765.dtsi
++++ b/arch/arm64/boot/dts/mediatek/mt6765.dtsi
+@@ -183,6 +183,12 @@ pericfg: pericfg@10003000 {
+             reg = <0 0x10003000 0 0x1000>;
+         };
+ 
++        apmixed: syscon@1000c000 {
++            compatible = "mediatek,mt6765-apmixedsys", "syscon";
++            reg = <0 0x1000c000 0 0x1000>;
++            #clock-cells = <1>;
++        };
++
+         usb2: usb@11200000 {
+             compatible = "mediatek,mtk-musb";
+             reg = <0 0x11200000 0 0x1000>;

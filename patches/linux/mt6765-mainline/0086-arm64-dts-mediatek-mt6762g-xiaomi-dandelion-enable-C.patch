@@ -1,0 +1,41 @@
+From 0bb69237270bb9dddcba79a8bf121de40ede917d Mon Sep 17 00:00:00 2001
+From: Ookiineko <chiisaineko@protonmail.com>
+Date: Wed, 1 Nov 2023 02:04:25 +0800
+Subject: [PATCH 86/91] arm64: dts: mediatek: mt6762g-xiaomi-dandelion: enable
+ CPU cluster 2 (more 4 core)
+
+* this works since we switch to Android 11 stock firmware V12.5.7.0.RCDMIXM
+
+Signed-off-by: Ookiineko <chiisaineko@protonmail.com>
+---
+ .../arm64/boot/dts/mediatek/mt6762g-xiaomi-dandelion.dts | 9 +++++++--
+ 1 file changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/mediatek/mt6762g-xiaomi-dandelion.dts b/arch/arm64/boot/dts/mediatek/mt6762g-xiaomi-dandelion.dts
+index dbc45939e..580f432df 100644
+--- a/arch/arm64/boot/dts/mediatek/mt6762g-xiaomi-dandelion.dts
++++ b/arch/arm64/boot/dts/mediatek/mt6762g-xiaomi-dandelion.dts
+@@ -15,6 +15,11 @@ / {
+     compatible = "xiaomi,dandelion", "mediatek,mt6762", "mediatek,mt6765";
+ 
+     chosen {
++        /*
++         * FIXME: drop clk_ignore_unused, keeps getting watchdog rebooted without it for now!
++         */
++        bootargs = "clk_ignore_unused";
++
+         stdout-path = &framebuffer0;
+ 
+         /*
+@@ -22,9 +27,9 @@ chosen {
+          * NOTE: only text is rendered on VT (TTY) as an unknown bit has to be flipped to disable
+          *        image compression!
+          */
+-        framebuffer0: framebuffer@7ef50000 {
++        framebuffer0: framebuffer@7ec50000 {
+             compatible = "simple-framebuffer";
+-            reg = <0 0x7ef50000 0 0xfb0000>;
++            reg = <0 0x7ec50000 0 0xfb0000>;
+             status = "okay";
+             width = <720>;
+             height = <1600>;

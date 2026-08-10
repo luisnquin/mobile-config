@@ -1,0 +1,27 @@
+From ec9eb25fa3eff139773500da8a89f8c591df7e38 Mon Sep 17 00:00:00 2001
+From: Arseniy Velikanov <adomerlee@gmail.com>
+Date: Sun, 13 Aug 2023 20:51:38 +0400
+Subject: [PATCH 06/91] arm64: dts: mediatek: mt6765: Add infracfg clock
+
+Signed-off-by: Arseniy Velikanov <adomerlee@gmail.com>
+---
+ arch/arm64/boot/dts/mediatek/mt6765.dtsi | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/mediatek/mt6765.dtsi b/arch/arm64/boot/dts/mediatek/mt6765.dtsi
+index cac4b354a..3e9aa555d 100644
+--- a/arch/arm64/boot/dts/mediatek/mt6765.dtsi
++++ b/arch/arm64/boot/dts/mediatek/mt6765.dtsi
+@@ -171,6 +171,12 @@ topckgen: syscon@10000000 {
+             #clock-cells = <1>;
+         };
+ 
++        infracfg: syscon@10001000 {
++            compatible = "mediatek,mt6765-infracfg", "syscon";
++            reg = <0 0x10001000 0 0x1000>;
++            interrupts = <GIC_SPI 147 IRQ_TYPE_EDGE_RISING>;
++            #clock-cells = <1>;
++        };
+ 
+         usb2: usb@11200000 {
+             compatible = "mediatek,mtk-musb";

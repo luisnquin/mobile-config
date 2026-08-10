@@ -1,0 +1,28 @@
+From 02eab15df2176bc64cfda05daff9e088c86eee4d Mon Sep 17 00:00:00 2001
+From: Arseniy Velikanov <adomerlee@gmail.com>
+Date: Wed, 16 Aug 2023 06:53:07 +0400
+Subject: [PATCH 33/91] arm64: dts: mediatek: mt6765: Add mmsys
+
+Signed-off-by: Arseniy Velikanov <adomerlee@gmail.com>
+---
+ arch/arm64/boot/dts/mediatek/mt6765.dtsi | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/mediatek/mt6765.dtsi b/arch/arm64/boot/dts/mediatek/mt6765.dtsi
+index 57f9d7761..df6b4fe0a 100644
+--- a/arch/arm64/boot/dts/mediatek/mt6765.dtsi
++++ b/arch/arm64/boot/dts/mediatek/mt6765.dtsi
+@@ -215,6 +215,13 @@ imgsys: syscon@15020000 {
+             #clock-cells = <1>;
+         };
+ 
++        mmsys: syscon@14000000 {
++            compatible = "mediatek,mt6765-mmsys", "syscon";
++            reg = <0 0x14000000 0 0x1000>;
++            interrupts = <GIC_SPI 227 IRQ_TYPE_LEVEL_LOW>;
++            #clock-cells = <1>;
++        };
++
+         // TODO: Add reset support
+         watchdog: watchdog@10007000 {
+             compatible = "mediatek,mt6589-wdt";

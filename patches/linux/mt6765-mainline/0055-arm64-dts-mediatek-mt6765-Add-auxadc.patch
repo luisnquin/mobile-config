@@ -1,0 +1,35 @@
+From 6b2dd6944cdb42d4e0ad5bfb550822cab930da90 Mon Sep 17 00:00:00 2001
+From: Arseniy Velikanov <adomerlee@gmail.com>
+Date: Wed, 16 Aug 2023 12:24:35 +0400
+Subject: [PATCH 55/91] arm64: dts: mediatek: mt6765: Add auxadc
+
+Signed-off-by: Arseniy Velikanov <adomerlee@gmail.com>
+---
+ arch/arm64/boot/dts/mediatek/mt6765.dtsi | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/mediatek/mt6765.dtsi b/arch/arm64/boot/dts/mediatek/mt6765.dtsi
+index 377d5fdc7..47635e805 100644
+--- a/arch/arm64/boot/dts/mediatek/mt6765.dtsi
++++ b/arch/arm64/boot/dts/mediatek/mt6765.dtsi
+@@ -622,6 +622,20 @@ u2port: usb-phy@11CC0800 {
+             };
+         };
+ 
++        auxadc: auxadc@11001000 {
++            compatible = "mediatek,mt6765-auxadc";
++            reg = <0 0x11001000 0 0x1000>;
++
++            interrupts = <GIC_SPI 76 IRQ_TYPE_EDGE_FALLING>;
++
++            clocks = <&infracfg CLK_IFR_AUXADC>;
++            clock-names = "main";
++
++            #io-channel-cells = <1>;
++
++            status = "disabled";
++        };
++
+         uart0: serial@11002000 {
+             compatible = "mediatek,mt6765-uart",
+                          "mediatek,mt6577-uart";

@@ -1,0 +1,81 @@
+From d5cccabe232cb4d92ea8c3e0ea0920e8fc9d3720 Mon Sep 17 00:00:00 2001
+From: Arseniy Velikanov <adomerlee@gmail.com>
+Date: Wed, 16 Aug 2023 01:39:08 +0400
+Subject: [PATCH 27/91] arm64: dts: mediatek: mt6765: Add I2C
+
+Use bit-banged i2c for now (hw i2c controller needs driver)
+
+Signed-off-by: Arseniy Velikanov <adomerlee@gmail.com>
+---
+ arch/arm64/boot/dts/mediatek/mt6765.dtsi | 51 ++++++++++++++++++++++++
+ 1 file changed, 51 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/mediatek/mt6765.dtsi b/arch/arm64/boot/dts/mediatek/mt6765.dtsi
+index 431085d90..0f51bf087 100644
+--- a/arch/arm64/boot/dts/mediatek/mt6765.dtsi
++++ b/arch/arm64/boot/dts/mediatek/mt6765.dtsi
+@@ -6,6 +6,7 @@
+ #include <dt-bindings/interrupt-controller/irq.h>
+ #include <dt-bindings/interrupt-controller/arm-gic.h>
+ #include <dt-bindings/clock/mt6765-clk.h>
++#include <dt-bindings/gpio/gpio.h>
+ #include <dt-bindings/phy/phy.h>
+ #include <dt-bindings/pinctrl/mediatek,mt6765-pinfunc.h>
+ 
+@@ -350,6 +351,56 @@ mmc1: msdc@11240000 {
+             status = "disabled";
+         };
+ 
++        // TODO: Use hardware i2c controller
++        i2c0: i2c@0 {
++            compatible = "i2c-gpio";
++            sda-gpios = <&pio 82 (GPIO_ACTIVE_HIGH|GPIO_OPEN_DRAIN)>;
++            scl-gpios = <&pio 83 (GPIO_ACTIVE_HIGH|GPIO_OPEN_DRAIN)>;
++            status = "disabled";
++        };
++
++        i2c1: i2c@1 {
++            compatible = "i2c-gpio";
++            sda-gpios = <&pio 81 (GPIO_ACTIVE_HIGH|GPIO_OPEN_DRAIN)>;
++            scl-gpios = <&pio 84 (GPIO_ACTIVE_HIGH|GPIO_OPEN_DRAIN)>;
++            status = "disabled";
++        };
++
++        i2c2: i2c@2 {
++            compatible = "i2c-gpio";
++            sda-gpios = <&pio 104 (GPIO_ACTIVE_HIGH|GPIO_OPEN_DRAIN)>;
++            scl-gpios = <&pio 103 (GPIO_ACTIVE_HIGH|GPIO_OPEN_DRAIN)>;
++            status = "disabled";
++        };
++
++        i2c3: i2c@3 {
++            compatible = "i2c-gpio";
++            sda-gpios = <&pio 51 (GPIO_ACTIVE_HIGH|GPIO_OPEN_DRAIN)>;
++            scl-gpios = <&pio 50 (GPIO_ACTIVE_HIGH|GPIO_OPEN_DRAIN)>;
++            status = "disabled";
++        };
++
++        i2c4: i2c@4 {
++            compatible = "i2c-gpio";
++            sda-gpios = <&pio 106 (GPIO_ACTIVE_HIGH|GPIO_OPEN_DRAIN)>;
++            scl-gpios = <&pio 105 (GPIO_ACTIVE_HIGH|GPIO_OPEN_DRAIN)>;
++            status = "disabled";
++        };
++
++        i2c5: i2c@5 {
++            compatible = "i2c-gpio";
++            sda-gpios = <&pio 49 (GPIO_ACTIVE_HIGH|GPIO_OPEN_DRAIN)>;
++            scl-gpios = <&pio 48 (GPIO_ACTIVE_HIGH|GPIO_OPEN_DRAIN)>;
++            status = "disabled";
++        };
++
++        i2c6: i2c@6 {
++            compatible = "i2c-gpio";
++            sda-gpios = <&pio 162 (GPIO_ACTIVE_HIGH|GPIO_OPEN_DRAIN)>;
++            scl-gpios = <&pio 161 (GPIO_ACTIVE_HIGH|GPIO_OPEN_DRAIN)>;
++            status = "disabled";
++        };
++
+         sysirq: intpol-controller@10200a80 {
+             compatible = "mediatek,mt6577-sysirq";
+             reg = <0 0x10200a80 0 0x50>; /* INTPOL */

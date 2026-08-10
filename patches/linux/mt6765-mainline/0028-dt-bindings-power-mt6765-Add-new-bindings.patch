@@ -1,0 +1,40 @@
+From 090d38cd670ef753c92178e41b111231d2e2b3e2 Mon Sep 17 00:00:00 2001
+From: Arseniy Velikanov <adomerlee@gmail.com>
+Date: Wed, 16 Aug 2023 06:39:04 +0400
+Subject: [PATCH 28/91] dt-bindings: power: mt6765: Add new bindings
+
+Signed-off-by: Arseniy Velikanov <adomerlee@gmail.com>
+---
+ include/dt-bindings/power/mt6765-power.h | 20 ++++++++++++--------
+ 1 file changed, 12 insertions(+), 8 deletions(-)
+
+diff --git a/include/dt-bindings/power/mt6765-power.h b/include/dt-bindings/power/mt6765-power.h
+index d347b4ee9..c9b040797 100644
+--- a/include/dt-bindings/power/mt6765-power.h
++++ b/include/dt-bindings/power/mt6765-power.h
+@@ -2,13 +2,17 @@
+ #ifndef _DT_BINDINGS_POWER_MT6765_POWER_H
+ #define _DT_BINDINGS_POWER_MT6765_POWER_H
+ 
+-#define MT6765_POWER_DOMAIN_CONN		0
+-#define MT6765_POWER_DOMAIN_MM			1
+-#define MT6765_POWER_DOMAIN_MFG_ASYNC		2
+-#define MT6765_POWER_DOMAIN_ISP			3
+-#define MT6765_POWER_DOMAIN_MFG			4
+-#define MT6765_POWER_DOMAIN_MFG_CORE0		5
+-#define MT6765_POWER_DOMAIN_CAM			6
+-#define MT6765_POWER_DOMAIN_VCODEC		7
++#define MT6765_POWER_DOMAIN_MD1 		0
++#define MT6765_POWER_DOMAIN_CONN		1
++#define MT6765_POWER_DOMAIN_DISP		2
++#define MT6765_POWER_DOMAIN_MFG			3
++#define	MT6765_POWER_DOMAIN_MFG_ASYNC	4
++#define	MT6765_POWER_DOMAIN_MFG_CORE0	5
++#define	MT6765_POWER_DOMAIN_ISP			6
++#define MT6765_POWER_DOMAIN_VDEC		7
++#define	MT6765_POWER_DOMAIN_VENC		8
++#define	MT6765_POWER_DOMAIN_VCODEC		9
++#define	MT6765_POWER_DOMAIN_MM			10
++#define	MT6765_POWER_DOMAIN_CAM			11
+ 
+ #endif /* _DT_BINDINGS_POWER_MT6765_POWER_H */

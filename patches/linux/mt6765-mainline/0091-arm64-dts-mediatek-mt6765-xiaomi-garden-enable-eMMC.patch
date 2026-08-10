@@ -1,0 +1,39 @@
+From b537381e85c27c582f849fb876f8b150794afff6 Mon Sep 17 00:00:00 2001
+From: dandelion-port <noreply@localhost>
+Date: Mon, 10 Aug 2026 11:51:11 -0500
+Subject: [PATCH 91/91] arm64: dts: mediatek: mt6765-xiaomi-garden: enable eMMC
+
+The rootfs lives on the eMMC, so mmc0 has to come up. Properties taken
+from the vendor 4.9 cust_mt6765_msdc.dtsi, minus mmc-hs400-1_8v and
+mmc-ddr-1_8v: HS400 needs a tuned hs400-ds-delay this port does not
+have.
+---
+ .../dts/mediatek/mt6765-xiaomi-garden-common.dtsi | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/mediatek/mt6765-xiaomi-garden-common.dtsi b/arch/arm64/boot/dts/mediatek/mt6765-xiaomi-garden-common.dtsi
+index e6388fa98..777f769f5 100644
+--- a/arch/arm64/boot/dts/mediatek/mt6765-xiaomi-garden-common.dtsi
++++ b/arch/arm64/boot/dts/mediatek/mt6765-xiaomi-garden-common.dtsi
+@@ -84,6 +84,21 @@ &u2port {
+     clocks = <&topckgen CLK_TOP_USB20_48M_EN>;
+ };
+ 
++&mmc0 {
++    status = "okay";
++
++    vmmc-supply = <&mt6357_vemc_reg>;
++    vqmmc-supply = <&mt6357_vio18_reg>;
++
++    bus-width = <8>;
++    max-frequency = <200000000>;
++    cap-mmc-highspeed;
++    mmc-hs200-1_8v;
++    no-sd;
++    no-sdio;
++    non-removable;
++};
++
+ &mmc1 {
+     status = "okay";
+ 

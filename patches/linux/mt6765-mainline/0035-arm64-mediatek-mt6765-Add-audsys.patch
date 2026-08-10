@@ -1,0 +1,27 @@
+From b0bb5de635ee342ff120ee075f133b5f46ed5305 Mon Sep 17 00:00:00 2001
+From: Arseniy Velikanov <adomerlee@gmail.com>
+Date: Wed, 16 Aug 2023 06:55:56 +0400
+Subject: [PATCH 35/91] arm64: mediatek: mt6765: Add audsys
+
+Signed-off-by: Arseniy Velikanov <adomerlee@gmail.com>
+---
+ arch/arm64/boot/dts/mediatek/mt6765.dtsi | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/mediatek/mt6765.dtsi b/arch/arm64/boot/dts/mediatek/mt6765.dtsi
+index 975a1b73e..7b653b76e 100644
+--- a/arch/arm64/boot/dts/mediatek/mt6765.dtsi
++++ b/arch/arm64/boot/dts/mediatek/mt6765.dtsi
+@@ -228,6 +228,12 @@ mipi_rx_ana_csi0a: syscon@11c10000 {
+             #clock-cells = <1>;
+         };
+ 
++        audio: syscon@11220000 {
++            compatible = "mediatek,mt6765-audsys", "syscon";
++            reg = <0 0x11220000 0 0x1000>;
++            #clock-cells = <1>;
++        };
++
+         // TODO: Add reset support
+         watchdog: watchdog@10007000 {
+             compatible = "mediatek,mt6589-wdt";

@@ -1,0 +1,109 @@
+From 3e7960b8bd139797e8f3a432c05fb35ad371f040 Mon Sep 17 00:00:00 2001
+From: Arseniy Velikanov <adomerlee@gmail.com>
+Date: Fri, 18 Aug 2023 04:24:20 +0400
+Subject: [PATCH 61/91] arm64: dts: mediatek: mt6765: Add GCE
+
+Signed-off-by: Arseniy Velikanov <adomerlee@gmail.com>
+---
+ arch/arm64/boot/dts/mediatek/mt6765.dtsi | 32 ++++++++++++++++++++++++
+ 1 file changed, 32 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/mediatek/mt6765.dtsi b/arch/arm64/boot/dts/mediatek/mt6765.dtsi
+index 9c896c229..0ff0ffad1 100644
+--- a/arch/arm64/boot/dts/mediatek/mt6765.dtsi
++++ b/arch/arm64/boot/dts/mediatek/mt6765.dtsi
+@@ -7,6 +7,7 @@
+ #include <dt-bindings/interrupt-controller/arm-gic.h>
+ #include <dt-bindings/clock/mt6765-clk.h>
+ #include <dt-bindings/gpio/gpio.h>
++#include <dt-bindings/gce/mt6765-gce.h>
+ #include <dt-bindings/memory/mediatek,mt6765-m4u.h>
+ #include <dt-bindings/phy/phy.h>
+ #include <dt-bindings/thermal/thermal.h>
+@@ -245,6 +246,10 @@ mmsys: syscon@14000000 {
+             reg = <0 0x14000000 0 0x1000>;
+             interrupts = <GIC_SPI 227 IRQ_TYPE_LEVEL_LOW>;
+             #clock-cells = <1>;
++
++            mboxes = <&gce 0 CMDQ_THR_PRIO_HIGHEST>,
++                     <&gce 1 CMDQ_THR_PRIO_HIGHEST>;
++            mediatek,gce-client-reg = <&gce SUBSYS_1400XXXX 0 0x1000>;
+         };
+ 
+         mipi_rx_ana_csi0a: syscon@11c10000 {
+@@ -363,6 +368,8 @@ ovl0: ovl@1400b000 {
+ 
+             iommus = <&m4u M4U_PORT_DISP_OVL0>;
+ 
++            mediatek,gce-client-reg = <&gce SUBSYS_1400XXXX 0xb000 0x1000>;
++
+             status = "disabled";
+         };
+ 
+@@ -378,6 +385,8 @@ ovl_2l0: ovl@1400c000 {
+ 
+             iommus = <&m4u M4U_PORT_DISP_2L_OVL0>;
+ 
++            mediatek,gce-client-reg = <&gce SUBSYS_1400XXXX 0xc000 0x1000>;
++
+             status = "disabled";
+         };
+ 
+@@ -393,6 +402,8 @@ disp_rdma0: dma-controller@1400d000 {
+ 
+             iommus = <&m4u M4U_PORT_DISP_RDMA0>;
+ 
++            mediatek,gce-client-reg = <&gce SUBSYS_1400XXXX 0xd000 0x1000>;
++
+             status = "disabled";
+         };
+ 
+@@ -404,6 +415,8 @@ color: color@1400f000 {
+ 
+             clocks = <&mmsys CLK_MM_DISP_COLOR0>;
+ 
++            mediatek,gce-client-reg = <&gce SUBSYS_1400XXXX 0xf000 0x1000>;
++
+             power-domains = <&spm MT6765_POWER_DOMAIN_DISP>;
+ 
+             status = "disabled";
+@@ -417,6 +430,8 @@ dither: dither@14013000 {
+ 
+             clocks = <&mmsys CLK_MM_DISP_DITHER0>;
+ 
++            mediatek,gce-client-reg = <&gce SUBSYS_1401XXXX 0x3000 0x1000>;
++
+             power-domains = <&spm MT6765_POWER_DOMAIN_DISP>;
+ 
+             status = "disabled";
+@@ -456,6 +471,10 @@ disp_mutex: mutex@14001000 {
+ 
+             clocks = <&clk32k>;
+ 
++            mediatek,gce-client-reg = <&gce SUBSYS_1400XXXX 0x1000 0x1000>;
++            mediatek,gce-events = <CMDQ_EVENT_MUTEX0_STREAM_EOF>,
++                                  <CMDQ_EVENT_MUTEX1_STREAM_EOF>;
++
+             power-domains = <&spm MT6765_POWER_DOMAIN_DISP>;
+ 
+             status = "disabled";
+@@ -477,6 +496,19 @@ mipi_tx: dsi-phy@11c80000 {
+             status = "disabled";
+         };
+ 
++        gce: mailbox@10238000 {
++            compatible = "mediatek,mt6765-gce";
++            reg = <0 0x10238000 0 0x4000>;
++
++            interrupts = <GIC_SPI 154 IRQ_TYPE_LEVEL_LOW>,
++                         <GIC_SPI 155 IRQ_TYPE_LEVEL_LOW>;
++
++            #mbox-cells = <2>;
++
++            clocks = <&infracfg CLK_IFR_GCE>;
++            clock-names = "gce";
++        };
++
+         // TODO: Add reset support
+         watchdog: watchdog@10007000 {
+             compatible = "mediatek,mt6589-wdt";

@@ -173,6 +173,14 @@
       # the job is debugging X. Same kernel, same initrd, same patched systemd,
       # same networking.
       graphical = evalFor system device {mobile.session.sxmo.enable = true;};
+
+      # Linux 6.18 LTS instead of the vendor 4.9.190 tree. Compiles and
+      # produces a device tree; never booted on hardware. Only the kernel and
+      # the boot image are exposed -- the rootfs is the same closure either
+      # way, and building it here would only duplicate it.
+      mainline = evalFor system device {
+        mobile.hardware.socs.mediatek-mt6765.kernelTree = "mainline";
+      };
     in {
       "${device}-boot-img" = eval.outputs.android.android-bootimg;
       "${device}-recovery-img" = eval.outputs.android.android-recovery;
@@ -182,6 +190,9 @@
 
       "${device}-graphical-fastboot-images" = graphical.outputs.android.android-fastboot-images;
       "${device}-graphical-system" = graphical.config.system.build.toplevel;
+
+      "${device}-mainline-kernel" = mainline.config.mobile.boot.stage-1.kernel.package;
+      "${device}-mainline-boot-img" = mainline.outputs.android.android-bootimg;
     };
   in {
     lib = {

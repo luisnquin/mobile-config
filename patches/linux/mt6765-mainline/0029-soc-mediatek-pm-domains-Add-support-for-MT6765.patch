@@ -1,0 +1,168 @@
+From dbc78bab56dd189dfb5cf0f06ad756a71e92ec89 Mon Sep 17 00:00:00 2001
+From: Arseniy Velikanov <adomerlee@gmail.com>
+Date: Wed, 16 Aug 2023 06:41:58 +0400
+Subject: [PATCH 29/91] soc: mediatek: pm-domains: Add support for MT6765
+
+Signed-off-by: Arseniy Velikanov <adomerlee@gmail.com>
+---
+ drivers/pmdomain/mediatek/mt6765-pm-domains.h | 129 ++++++++++++++++++
+ drivers/pmdomain/mediatek/mtk-pm-domains.c    |   3 +
+ 2 files changed, 132 insertions(+)
+ create mode 100644 drivers/pmdomain/mediatek/mt6765-pm-domains.h
+
+diff --git a/drivers/pmdomain/mediatek/mt6765-pm-domains.h b/drivers/pmdomain/mediatek/mt6765-pm-domains.h
+new file mode 100644
+index 000000000..78e242595
+--- /dev/null
++++ b/drivers/pmdomain/mediatek/mt6765-pm-domains.h
+@@ -0,0 +1,129 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#ifndef __MT6765_PM_DOMAINS_H
++#define __MT6765_PM_DOMAINS_H
++
++#include "mtk-pm-domains.h"
++#include <dt-bindings/power/mt6765-power.h>
++
++/*
++ * MT6765 power domain support
++ */
++
++static const struct scpsys_domain_data scpsys_domain_data_mt6765[] = {
++	[MT6765_POWER_DOMAIN_MD1] = {
++		.name = "md1",
++		.sta_mask = BIT(0),
++		.ctl_offs = 0x320,
++		.pwr_sta_offs = 0x180,
++		.pwr_sta2nd_offs = 0x184,
++		.sram_pdn_bits = GENMASK(8, 8),
++		.sram_pdn_ack_bits = 0,
++	},
++	[MT6765_POWER_DOMAIN_CONN] = {
++		.name = "conn",
++		.sta_mask = PWR_STATUS_CONN,
++		.ctl_offs = 0x32c,
++		.pwr_sta_offs = 0x180,
++		.pwr_sta2nd_offs = 0x184,
++		.sram_pdn_bits = 0,
++		.sram_pdn_ack_bits = 0,
++	},
++	[MT6765_POWER_DOMAIN_DISP] = {
++		.name = "disp",
++		.sta_mask = PWR_STATUS_DISP,
++		.ctl_offs = 0x30c,
++		.pwr_sta_offs = 0x180,
++		.pwr_sta2nd_offs = 0x184,
++		.sram_pdn_bits = GENMASK(8, 8),
++		.sram_pdn_ack_bits = GENMASK(12, 12),
++	},
++	[MT6765_POWER_DOMAIN_MFG] = {
++		.name = "mfg",
++		.sta_mask = PWR_STATUS_MFG,
++		.ctl_offs = 0x338,
++		.pwr_sta_offs = 0x180,
++		.pwr_sta2nd_offs = 0x184,
++		.sram_pdn_bits = GENMASK(8, 8),
++		.sram_pdn_ack_bits = GENMASK(12, 12),
++	},
++	[MT6765_POWER_DOMAIN_MFG_ASYNC] = {
++		.name = "mfg_async",
++		.sta_mask = PWR_STATUS_MFG_ASYNC,
++		.ctl_offs = 0x334,
++		.pwr_sta_offs = 0x180,
++		.pwr_sta2nd_offs = 0x184,
++		.sram_pdn_bits = 0,
++		.sram_pdn_ack_bits = 0,
++	},
++	[MT6765_POWER_DOMAIN_MFG_CORE0] = {
++		.name = "mfg_core0",
++		.sta_mask = BIT(7),
++		.ctl_offs = 0x34c,
++		.pwr_sta_offs = 0x180,
++		.pwr_sta2nd_offs = 0x184,
++		.sram_pdn_bits = GENMASK(8, 8),
++		.sram_pdn_ack_bits = GENMASK(12, 12),
++	},
++	[MT6765_POWER_DOMAIN_ISP] = {
++		.name = "isp",
++		.sta_mask = PWR_STATUS_ISP,
++		.ctl_offs = 0x308,
++		.pwr_sta_offs = 0x180,
++		.pwr_sta2nd_offs = 0x184,
++		.sram_pdn_bits = GENMASK(8, 8),
++		.sram_pdn_ack_bits = GENMASK(12, 12),
++	},
++	[MT6765_POWER_DOMAIN_VDEC] = {
++		.name = "vdec",
++		.sta_mask = PWR_STATUS_VDEC,
++		.ctl_offs = 0x370,
++		.pwr_sta_offs = 0x180,
++		.pwr_sta2nd_offs = 0x184,
++		.sram_pdn_bits = GENMASK(8, 8),
++		.sram_pdn_ack_bits = GENMASK(12, 12),
++	},
++	[MT6765_POWER_DOMAIN_VENC] = {
++		.name = "venc",
++		.sta_mask = BIT(8),
++		.ctl_offs = 0x304,
++		.pwr_sta_offs = 0x180,
++		.pwr_sta2nd_offs = 0x184,
++		.sram_pdn_bits = GENMASK(11, 8),
++		.sram_pdn_ack_bits = GENMASK(15, 12),
++	},
++	[MT6765_POWER_DOMAIN_VCODEC] = {
++		.name = "vcodec",
++		.sta_mask = BIT(26),
++		.ctl_offs = 0x300,
++		.pwr_sta_offs = 0x180,
++		.pwr_sta2nd_offs = 0x184,
++		.sram_pdn_bits = GENMASK(8, 8),
++		.sram_pdn_ack_bits = GENMASK(12, 12),
++    },
++	[MT6765_POWER_DOMAIN_MM] = {
++		.name = "mm",
++		.sta_mask = BIT(3),
++		.ctl_offs = 0x30c,
++		.pwr_sta_offs = 0x180,
++		.pwr_sta2nd_offs = 0x184,
++		.sram_pdn_bits = GENMASK(8, 8),
++		.sram_pdn_ack_bits = GENMASK(12, 12),
++	},
++	[MT6765_POWER_DOMAIN_CAM] = {
++		.name = "cam",
++		.sta_mask = BIT(25),
++		.ctl_offs = 0x344,
++		.pwr_sta_offs = 0x180,
++		.pwr_sta2nd_offs = 0x184,
++		.sram_pdn_bits = GENMASK(9, 8),
++		.sram_pdn_ack_bits = GENMASK(13, 12),
++	},
++};
++
++static const struct scpsys_soc_data mt6765_scpsys_data = {
++	.domains_data = scpsys_domain_data_mt6765,
++	.num_domains = ARRAY_SIZE(scpsys_domain_data_mt6765),
++};
++
++#endif /* __MT6765_PM_DOMAINS_H */
+diff --git a/drivers/pmdomain/mediatek/mtk-pm-domains.c b/drivers/pmdomain/mediatek/mtk-pm-domains.c
+index 9c9323c8c..f33ad2282 100644
+--- a/drivers/pmdomain/mediatek/mtk-pm-domains.c
++++ b/drivers/pmdomain/mediatek/mtk-pm-domains.c
+@@ -17,6 +17,7 @@
+ #include <linux/soc/mediatek/infracfg.h>
+ 
+ #include "mt6735-pm-domains.h"
++#include "mt6765-pm-domains.h"
+ #include "mt6795-pm-domains.h"
+ #include "mt6893-pm-domains.h"
+ #include "mt8167-pm-domains.h"
+@@ -894,6 +895,8 @@ static const struct of_device_id scpsys_of_match[] = {
+ 	{
+ 		.compatible = "mediatek,mt6735-power-controller",
+ 		.data = &mt6735_scpsys_data,
++		.compatible = "mediatek,mt6765-power-controller",
++		.data = &mt6765_scpsys_data,
+ 	},
+ 	{
+ 		.compatible = "mediatek,mt6795-power-controller",

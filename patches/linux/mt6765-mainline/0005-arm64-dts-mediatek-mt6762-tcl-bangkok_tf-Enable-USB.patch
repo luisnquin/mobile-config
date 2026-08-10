@@ -1,0 +1,31 @@
+From 006418dbe2a9814d783ddc97ee3d286854feaf47 Mon Sep 17 00:00:00 2001
+From: Arseniy Velikanov <adomerlee@gmail.com>
+Date: Sun, 13 Aug 2023 20:45:02 +0400
+Subject: [PATCH 05/91] arm64: dts: mediatek: mt6762-tcl-bangkok_tf: Enable USB
+
+Signed-off-by: Arseniy Velikanov <adomerlee@gmail.com>
+---
+ .../boot/dts/mediatek/mt6762-tcl-bangkok_tf.dts     | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/mediatek/mt6762-tcl-bangkok_tf.dts b/arch/arm64/boot/dts/mediatek/mt6762-tcl-bangkok_tf.dts
+index fe2f31b11..58920ea41 100644
+--- a/arch/arm64/boot/dts/mediatek/mt6762-tcl-bangkok_tf.dts
++++ b/arch/arm64/boot/dts/mediatek/mt6762-tcl-bangkok_tf.dts
+@@ -43,3 +43,16 @@ __symbols__ {
+         gpio = "/gpio@10005000";
+     };
+ };
++
++&usb2 {
++    status = "okay";
++
++    usb_con: connector {
++        compatible = "usb-b-connector";
++        type = "micro";
++    };
++};
++
++&u2phy {
++    status = "okay";
++};

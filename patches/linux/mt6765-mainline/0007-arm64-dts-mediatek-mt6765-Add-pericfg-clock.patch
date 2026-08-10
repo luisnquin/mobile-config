@@ -1,0 +1,26 @@
+From 3a99d06778d66b01485f443db716bba99642f4ca Mon Sep 17 00:00:00 2001
+From: Arseniy Velikanov <adomerlee@gmail.com>
+Date: Sun, 13 Aug 2023 20:52:31 +0400
+Subject: [PATCH 07/91] arm64: dts: mediatek: mt6765: Add pericfg clock
+
+Signed-off-by: Arseniy Velikanov <adomerlee@gmail.com>
+---
+ arch/arm64/boot/dts/mediatek/mt6765.dtsi | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/mediatek/mt6765.dtsi b/arch/arm64/boot/dts/mediatek/mt6765.dtsi
+index 3e9aa555d..e6540c2d7 100644
+--- a/arch/arm64/boot/dts/mediatek/mt6765.dtsi
++++ b/arch/arm64/boot/dts/mediatek/mt6765.dtsi
+@@ -178,6 +178,11 @@ infracfg: syscon@10001000 {
+             #clock-cells = <1>;
+         };
+ 
++        pericfg: pericfg@10003000 {
++            compatible = "mediatek,mt6765-pericfg", "syscon";
++            reg = <0 0x10003000 0 0x1000>;
++        };
++
+         usb2: usb@11200000 {
+             compatible = "mediatek,mtk-musb";
+             reg = <0 0x11200000 0 0x1000>;

@@ -1,0 +1,24 @@
+From 5890b7223d5e989df6479d9b434d44e77fbd5291 Mon Sep 17 00:00:00 2001
+From: Arseniy Velikanov <adomerlee@gmail.com>
+Date: Tue, 15 Aug 2023 22:31:23 +0400
+Subject: [PATCH 24/91] arm64: dts: mediatek: mt6762-tcl-bangkok_tf: Use the
+ real size for simplefb
+
+Signed-off-by: Arseniy Velikanov <adomerlee@gmail.com>
+---
+ arch/arm64/boot/dts/mediatek/mt6762-tcl-bangkok_tf.dts | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/arch/arm64/boot/dts/mediatek/mt6762-tcl-bangkok_tf.dts b/arch/arm64/boot/dts/mediatek/mt6762-tcl-bangkok_tf.dts
+index 1544146eb..eea064fa2 100644
+--- a/arch/arm64/boot/dts/mediatek/mt6762-tcl-bangkok_tf.dts
++++ b/arch/arm64/boot/dts/mediatek/mt6762-tcl-bangkok_tf.dts
+@@ -26,7 +26,7 @@ chosen {
+          */
+         framebuffer0: framebuffer@7dad0000 {
+             compatible = "simple-framebuffer";
+-            reg = <0 0x7dad0000 0 0xe30000>;
++            reg = <0 0x7dad0000 0 (720 * 1440 * 4)>;
+             status = "okay";
+             width = <720>;
+             height = <1440>;

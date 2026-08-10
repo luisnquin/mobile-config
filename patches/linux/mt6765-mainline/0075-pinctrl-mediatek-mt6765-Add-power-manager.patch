@@ -1,0 +1,22 @@
+From 51cf07abb25b14e3bb7ccd6f90bf21047535c405 Mon Sep 17 00:00:00 2001
+From: Arseniy Velikanov <adomerlee@gmail.com>
+Date: Wed, 23 Aug 2023 01:10:11 +0400
+Subject: [PATCH 75/91] pinctrl: mediatek: mt6765: Add power manager
+
+Signed-off-by: Arseniy Velikanov <adomerlee@gmail.com>
+---
+ drivers/pinctrl/mediatek/pinctrl-mt6765.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/pinctrl/mediatek/pinctrl-mt6765.c b/drivers/pinctrl/mediatek/pinctrl-mt6765.c
+index 72609cf74..45f0c5e53 100644
+--- a/drivers/pinctrl/mediatek/pinctrl-mt6765.c
++++ b/drivers/pinctrl/mediatek/pinctrl-mt6765.c
+@@ -1092,6 +1092,7 @@ static struct platform_driver mt6765_pinctrl_driver = {
+ 	.driver = {
+ 		.name = "mt6765-pinctrl",
+ 		.of_match_table = mt6765_pinctrl_of_match,
++		.pm = &mtk_eint_pm_ops_v2,
+ 	},
+ 	.probe = mtk_paris_pinctrl_probe,
+ };

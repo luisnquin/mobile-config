@@ -1,0 +1,33 @@
+From 0bbe617d579198f0bde230e85f7e2c67d6407ae7 Mon Sep 17 00:00:00 2001
+From: Arseniy Velikanov <adomerlee@gmail.com>
+Date: Sun, 20 Aug 2023 23:22:24 +0400
+Subject: [PATCH 68/91] clk: mediatek: mt6765-img: Add reset support
+
+Signed-off-by: Arseniy Velikanov <adomerlee@gmail.com>
+---
+ drivers/clk/mediatek/clk-mt6765-img.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/drivers/clk/mediatek/clk-mt6765-img.c b/drivers/clk/mediatek/clk-mt6765-img.c
+index ff857852c..708d7be1d 100644
+--- a/drivers/clk/mediatek/clk-mt6765-img.c
++++ b/drivers/clk/mediatek/clk-mt6765-img.c
+@@ -29,9 +29,18 @@ static const struct mtk_gate img_clks[] = {
+ 	GATE_IMG(CLK_IMG_RSC, "img_rsc", "mm_ck", 5),
+ };
+ 
++static u16 img_rst_ofs[] = { 0xc };
++
++static const struct mtk_clk_rst_desc img_resets = {
++	.version = MTK_RST_SIMPLE,
++	.rst_bank_ofs = img_rst_ofs,
++	.rst_bank_nr = ARRAY_SIZE(img_rst_ofs)
++};
++
+ static const struct mtk_clk_desc img_desc = {
+ 	.clks = img_clks,
+ 	.num_clks = ARRAY_SIZE(img_clks),
++	.rst_desc = &img_resets,
+ };
+ 
+ static const struct of_device_id of_match_clk_mt6765_img[] = {

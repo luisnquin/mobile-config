@@ -1,0 +1,81 @@
+From 7feabc671ec6298b4cd85ef989a40d43e048503a Mon Sep 17 00:00:00 2001
+From: Ookiineko <chiisaineko@protonmail.com>
+Date: Tue, 31 Oct 2023 22:49:56 +0800
+Subject: [PATCH 87/91] arm64: dts: mediatek: Add initial support for Xiaomi
+ Redmi 9C NFC
+
+Signed-off-by: Ookiineko <chiisaineko@protonmail.com>
+---
+ arch/arm64/boot/dts/mediatek/Makefile         |  1 +
+ .../dts/mediatek/mt6765g-xiaomi-angelican.dts | 50 +++++++++++++++++++
+ 2 files changed, 51 insertions(+)
+ create mode 100644 arch/arm64/boot/dts/mediatek/mt6765g-xiaomi-angelican.dts
+
+diff --git a/arch/arm64/boot/dts/mediatek/Makefile b/arch/arm64/boot/dts/mediatek/Makefile
+index d1b3773e0..d56badd82 100644
+--- a/arch/arm64/boot/dts/mediatek/Makefile
++++ b/arch/arm64/boot/dts/mediatek/Makefile
+@@ -5,6 +5,7 @@ dtb-$(CONFIG_ARCH_MEDIATEK) += mt6762-tcl-bangkok_tf.dtb
+ dtb-$(CONFIG_ARCH_MEDIATEK) += mt6762-nokia-roo.dtb
+ dtb-$(CONFIG_ARCH_MEDIATEK) += mt6762-tcl-bangkok_tf-minimal-dtbo.dtb
+ dtb-$(CONFIG_ARCH_MEDIATEK) += mt6762g-xiaomi-dandelion.dtb
++dtb-$(CONFIG_ARCH_MEDIATEK) += mt6765g-xiaomi-angelican.dtb
+ dtb-$(CONFIG_ARCH_MEDIATEK) += mt6779-evb.dtb
+ dtb-$(CONFIG_ARCH_MEDIATEK) += mt6795-evb.dtb
+ dtb-$(CONFIG_ARCH_MEDIATEK) += mt6795-sony-xperia-m5.dtb
+diff --git a/arch/arm64/boot/dts/mediatek/mt6765g-xiaomi-angelican.dts b/arch/arm64/boot/dts/mediatek/mt6765g-xiaomi-angelican.dts
+new file mode 100644
+index 000000000..d259ed08e
+--- /dev/null
++++ b/arch/arm64/boot/dts/mediatek/mt6765g-xiaomi-angelican.dts
+@@ -0,0 +1,50 @@
++// SPDX-License-Identifier: (GPL-2.0 OR MIT)
++/*
++ * Device Tree Source for Xiaomi Redmi 9C NFC (angelican)
++ *
++ * Copyright (c) 2023 Arseniy Velikanov <adomerlee@gmail.com>
++ * Copyright (C) 2023 Brandon Boese
++ */
++
++/dts-v1/;
++
++#include "mt6765-xiaomi-garden-common.dtsi"
++
++/ {
++    model = "Xiaomi Redmi 9C NFC";
++    compatible = "xiaomi,angelican", "mediatek,mt6762", "mediatek,mt6765";
++
++    chosen {
++        /*
++         * FIXME: drop clk_ignore_unused, keeps getting watchdog rebooted without it for now!
++         */
++        bootargs = "clk_ignore_unused";
++
++        stdout-path = &framebuffer0;
++
++        /*
++         * HACK: Use display framebuffer setup by the lk bootloader for simplefb
++         * NOTE: only text is rendered on VT (TTY) as an unknown bit has to be flipped to disable
++         *        image compression!
++         */
++        framebuffer0: framebuffer@7ec50000 {
++            compatible = "simple-framebuffer";
++            reg = <0 0x7ec50000 0 0xfb0000>;
++            status = "okay";
++            width = <720>;
++            height = <1600>;
++            stride = <((720 + 16) * 4)>;
++            format = "a8r8g8b8";
++        };
++    };
++
++    /* The following are required by stock bootloader to merge with minimal DTBO */
++    gpio@10005000 {
++        linux,phandle = <0xdead>;
++        phandle = <0xdead>;
++    };
++    __symbols__ {
++        gpio = "/gpio@10005000";
++    };
++
++};

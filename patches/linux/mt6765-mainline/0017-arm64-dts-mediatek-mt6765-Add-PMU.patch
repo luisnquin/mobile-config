@@ -1,0 +1,27 @@
+From f8d99750b1037345356eeeff0ecefa1c66d455f9 Mon Sep 17 00:00:00 2001
+From: Arseniy Velikanov <adomerlee@gmail.com>
+Date: Mon, 14 Aug 2023 19:20:49 +0400
+Subject: [PATCH 17/91] arm64: dts: mediatek: mt6765: Add PMU
+
+Signed-off-by: Arseniy Velikanov <adomerlee@gmail.com>
+---
+ arch/arm64/boot/dts/mediatek/mt6765.dtsi | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/mediatek/mt6765.dtsi b/arch/arm64/boot/dts/mediatek/mt6765.dtsi
+index d75c55eaa..a6841bc11 100644
+--- a/arch/arm64/boot/dts/mediatek/mt6765.dtsi
++++ b/arch/arm64/boot/dts/mediatek/mt6765.dtsi
+@@ -149,6 +149,12 @@ timer {
+                      <GIC_PPI 10 IRQ_TYPE_LEVEL_LOW>;
+     };
+ 
++    pmu {
++        compatible = "arm,armv8-pmuv3";
++        interrupt-parent = <&gic>;
++        interrupts = <GIC_PPI 7 IRQ_TYPE_LEVEL_LOW>;
++    };
++
+     soc {
+         #address-cells = <2>;
+         #size-cells = <2>;

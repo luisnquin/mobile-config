@@ -9,7 +9,16 @@
   lib,
   pkgs,
   ...
-}: {
+}: let
+  # The two kernels do not name the device tree the same file. The vendor tree
+  # builds one `mt6765.dtb` for the whole SoC and lets the bootloader overlay
+  # the stock `dtbo` on top; the mainline series carries a per-device tree.
+  dtb = "${config.mobile.boot.stage-1.kernel.package}/dtbs/mediatek/${
+    if config.mobile.hardware.socs.mediatek-mt6765.kernelTree == "mainline"
+    then "mt6762g-xiaomi-dandelion.dtb"
+    else "mt6765.dtb"
+  }";
+in {
   imports = [
     ../../modules/soc/mt6765.nix
     ../../modules/systemd-linux-4.9.nix
@@ -147,7 +156,10 @@
   };
 
   mobile.boot.stage-1.kernel = {
-    package = pkgs.callPackage ./kernel {};
+    package =
+      if config.mobile.hardware.socs.mediatek-mt6765.kernelTree == "mainline"
+      then pkgs.callPackage ./kernel-mainline {}
+      else pkgs.callPackage ./kernel {};
     # Every driver on the boot path is built in; the initrd loads nothing.
     modular = false;
   };
@@ -219,9 +231,7 @@
     # the whole window and `HWT` at ~30s, three times, unchanged by the ramdisk
     # codec. Which of the two locations LK actually reads is still unknown, so
     # both are populated, as stock does.
-    appendDTB = [
-      "${config.mobile.boot.stage-1.kernel.package}/dtbs/mediatek/mt6765.dtb"
-    ];
+    appendDTB = [dtb];
 
     # Not the bare `mt6765.dtb`. Stock does not put a bare FDT in this section:
     # it puts a dt_table container -- magic 0xd7b7ab1e, the same format as
@@ -244,8 +254,7 @@
       pkgs.runCommand "dandelion-mt6765-dt-table.img" {
         nativeBuildInputs = [pkgs.buildPackages.android-tools];
       } ''
-        mkdtboimg create "$out" --id=0 --rev=0 \
-          ${config.mobile.boot.stage-1.kernel.package}/dtbs/mediatek/mt6765.dtb
+        mkdtboimg create "$out" --id=0 --rev=0 ${dtb}
       '';
     # kernel-info.mk sets DTB_OFFSET and TAGS_OFFSET to the same value.
     bootimg.offset_dtb = "0x07808000";

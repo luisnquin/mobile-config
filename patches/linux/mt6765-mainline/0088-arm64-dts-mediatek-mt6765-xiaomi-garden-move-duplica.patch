@@ -1,0 +1,150 @@
+From d79cf42fedd8ce7bc4453a8c1f105854f1aaedf1 Mon Sep 17 00:00:00 2001
+From: Ookiineko <chiisaineko@protonmail.com>
+Date: Wed, 1 Nov 2023 15:36:20 +0800
+Subject: [PATCH 88/91] arm64: dts: mediatek: mt6765-xiaomi-garden: move
+ duplicate code to common
+
+Signed-off-by: Ookiineko <chiisaineko@protonmail.com>
+---
+ .../dts/mediatek/mt6762g-xiaomi-dandelion.dts | 34 -----------------
+ .../mediatek/mt6765-xiaomi-garden-common.dtsi | 38 +++++++++++++++++++
+ .../dts/mediatek/mt6765g-xiaomi-angelican.dts | 36 +-----------------
+ 3 files changed, 39 insertions(+), 69 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/mediatek/mt6762g-xiaomi-dandelion.dts b/arch/arm64/boot/dts/mediatek/mt6762g-xiaomi-dandelion.dts
+index 580f432df..b434a3cb2 100644
+--- a/arch/arm64/boot/dts/mediatek/mt6762g-xiaomi-dandelion.dts
++++ b/arch/arm64/boot/dts/mediatek/mt6762g-xiaomi-dandelion.dts
+@@ -13,38 +13,4 @@
+ / {
+     model = "Xiaomi Redmi 9A";
+     compatible = "xiaomi,dandelion", "mediatek,mt6762", "mediatek,mt6765";
+-
+-    chosen {
+-        /*
+-         * FIXME: drop clk_ignore_unused, keeps getting watchdog rebooted without it for now!
+-         */
+-        bootargs = "clk_ignore_unused";
+-
+-        stdout-path = &framebuffer0;
+-
+-        /*
+-         * HACK: Use display framebuffer setup by the lk bootloader for simplefb
+-         * NOTE: only text is rendered on VT (TTY) as an unknown bit has to be flipped to disable
+-         *        image compression!
+-         */
+-        framebuffer0: framebuffer@7ec50000 {
+-            compatible = "simple-framebuffer";
+-            reg = <0 0x7ec50000 0 0xfb0000>;
+-            status = "okay";
+-            width = <720>;
+-            height = <1600>;
+-            stride = <((720 + 16) * 4)>;
+-            format = "a8r8g8b8";
+-        };
+-    };
+-
+-    /* The following are required by stock bootloader to merge with minimal DTBO */
+-    gpio@10005000 {
+-        linux,phandle = <0xdead>;
+-        phandle = <0xdead>;
+-    };
+-    __symbols__ {
+-        gpio = "/gpio@10005000";
+-    };
+-
+ };
+diff --git a/arch/arm64/boot/dts/mediatek/mt6765-xiaomi-garden-common.dtsi b/arch/arm64/boot/dts/mediatek/mt6765-xiaomi-garden-common.dtsi
+index 979e32683..f2c6a63a5 100644
+--- a/arch/arm64/boot/dts/mediatek/mt6765-xiaomi-garden-common.dtsi
++++ b/arch/arm64/boot/dts/mediatek/mt6765-xiaomi-garden-common.dtsi
+@@ -8,6 +8,44 @@
+ #include "mt6765-bl-quirks.dtsi"
+ #include "mt6357.dtsi"
+ 
++/ {
++    compatible = "mediatek,mt6765";
++
++    chosen {
++        /*
++         * FIXME: drop clk_ignore_unused, keeps getting watchdog rebooted without it for now!
++         */
++        bootargs = "clk_ignore_unused";
++
++        stdout-path = &framebuffer0;
++
++        /*
++         * HACK: Use display framebuffer setup by the lk bootloader for simplefb
++         * NOTE: only text is rendered on VT (TTY) as an unknown bit has to be flipped to disable
++         *        image compression!
++         */
++        framebuffer0: framebuffer@7ec50000 {
++            compatible = "simple-framebuffer";
++            reg = <0 0x7ec50000 0 0xfb0000>;
++            status = "okay";
++            width = <720>;
++            height = <1600>;
++            stride = <((720 + 16) * 4)>;
++            format = "a8r8g8b8";
++        };
++    };
++
++    /* The following are required by stock bootloader to merge with minimal DTBO */
++    gpio@10005000 {
++        linux,phandle = <0xdead>;
++        phandle = <0xdead>;
++    };
++    __symbols__ {
++        gpio = "/gpio@10005000";
++    };
++
++};
++
+ &pwrap {
+     status = "okay";
+ };
+diff --git a/arch/arm64/boot/dts/mediatek/mt6765g-xiaomi-angelican.dts b/arch/arm64/boot/dts/mediatek/mt6765g-xiaomi-angelican.dts
+index d259ed08e..cc18c7f89 100644
+--- a/arch/arm64/boot/dts/mediatek/mt6765g-xiaomi-angelican.dts
++++ b/arch/arm64/boot/dts/mediatek/mt6765g-xiaomi-angelican.dts
+@@ -12,39 +12,5 @@
+ 
+ / {
+     model = "Xiaomi Redmi 9C NFC";
+-    compatible = "xiaomi,angelican", "mediatek,mt6762", "mediatek,mt6765";
+-
+-    chosen {
+-        /*
+-         * FIXME: drop clk_ignore_unused, keeps getting watchdog rebooted without it for now!
+-         */
+-        bootargs = "clk_ignore_unused";
+-
+-        stdout-path = &framebuffer0;
+-
+-        /*
+-         * HACK: Use display framebuffer setup by the lk bootloader for simplefb
+-         * NOTE: only text is rendered on VT (TTY) as an unknown bit has to be flipped to disable
+-         *        image compression!
+-         */
+-        framebuffer0: framebuffer@7ec50000 {
+-            compatible = "simple-framebuffer";
+-            reg = <0 0x7ec50000 0 0xfb0000>;
+-            status = "okay";
+-            width = <720>;
+-            height = <1600>;
+-            stride = <((720 + 16) * 4)>;
+-            format = "a8r8g8b8";
+-        };
+-    };
+-
+-    /* The following are required by stock bootloader to merge with minimal DTBO */
+-    gpio@10005000 {
+-        linux,phandle = <0xdead>;
+-        phandle = <0xdead>;
+-    };
+-    __symbols__ {
+-        gpio = "/gpio@10005000";
+-    };
+-
++    compatible = "xiaomi,angelican", "mediatek,mt6765";
+ };
