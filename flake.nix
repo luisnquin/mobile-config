@@ -264,6 +264,32 @@
         huaweiMarieBoot = bootProfiles.huawei-marie;
         huaweiMarieFirmware = firmwareProfiles.huawei-marie;
         huaweiMarieKernel = kernelProfiles.huawei-marie;
+        huaweiMariePartitions = import ./devices/huawei-marie/partitions.nix;
+
+        # profile.nix names the block device a write actually lands on
+        # (`kernel = "sdd44"`); partitions.nix carries the slot numbers. Nothing
+        # connected the two, and partitions.nix says to regenerate it rather than
+        # hand-edit it -- so a regenerated table that renumbers a slot would leave
+        # profile.nix aiming a flash at whatever moved into the old index, on a
+        # device with a locked bootloader whose only independent recovery path is
+        # one partition wide. This attrset is that missing contract: the GPT entry
+        # each logical role in profile.nix is required to resolve to.
+        huaweiMarieDeviceRoles = {
+          kernel = "kernel";
+          ramdisk = "ramdisk";
+          recoveryRamdisk = "recovery_ramdisk";
+          recoveryVendor = "recovery_vendor";
+          recoveryVbmeta = "recovery_vbmeta";
+          erecoveryKernel = "erecovery_kernel";
+          erecoveryRamdisk = "erecovery_ramdisk";
+          erecoveryVendor = "erecovery_vendor";
+          erecoveryVbmeta = "erecovery_vbmeta";
+          dts = "dts";
+          dto = "dto";
+          vbmeta = "vbmeta";
+          super = "super";
+          userdata = "userdata";
+        };
         huaweiMarieSplitFixture = (huaweiSplitImagesFor system) {
           kernel = pkgs.writeText "huawei-marie-split-fixture-kernel" "kernel";
           ramdisk = pkgs.writeText "huawei-marie-split-fixture-ramdisk" "ramdisk";
@@ -272,6 +298,26 @@
           kernelFormat = "raw-image.gz";
           ramdiskFormat = "compressed-cpio";
           ramdiskCompression = "gzip";
+          # The payloads are synthetic but the device-tree pair is not: taken
+          # from the firmware evidence so the fixture cannot describe a board
+          # this port never proved, and so a change in that evidence has to be
+          # answered here.
+          deviceTrees = {
+            base = {
+              partition = huaweiMarieDeviceRoles.dts;
+              compatible = huaweiMarieFirmware.deviceTreeEvidence.base.compatible;
+              wrapperBytes = huaweiMarieFirmware.deviceTreeEvidence.base.wrapperBytes;
+              written = false;
+            };
+            overlay = {
+              partition = huaweiMarieDeviceRoles.dto;
+              selectedBy = "board-id";
+              boardId = huaweiMarieFirmware.deviceTreeEvidence.overlay.selected.boardId;
+              container = huaweiMarieFirmware.deviceTreeEvidence.overlay.container;
+              wrapperBytes = huaweiMarieFirmware.deviceTreeEvidence.overlay.wrapperBytes;
+              written = false;
+            };
+          };
           evidence = {
             kernelCapacity = "synthetic evaluation fixture";
             kernelFormat = "synthetic evaluation fixture";
@@ -286,9 +332,109 @@
         assert huaweiMarieFirmware.complete == false;
         assert huaweiMarieFirmware.observed.base == "MAR-LGRP2-OVS 10.0.0.564";
         assert huaweiMarieFirmware.artifacts.base.publicIndexAudit.exactMatch == false;
-        assert huaweiMarieFirmware.artifacts.base.publicIndexAudit.closestSameRegion.restoreCompatible == false;
+        assert huaweiMarieFirmware.artifacts.base.publicIndexAudit.buildConfirmedByV2.downloadable == false;
+        assert builtins.all (c: c.restoreCompatible == false) (
+          builtins.attrValues huaweiMarieFirmware.artifacts.base.publicIndexAudit.candidates
+        );
+        assert huaweiMarieFirmware.partitionGeometry.exact == true;
+        assert huaweiMarieFirmware.partitionGeometry.entryCount == 67;
+        assert huaweiMarieFirmware.partitionGeometry.logicalBlockBytes == 4096;
+        # Every padded payload length must still equal its partition's size, so
+        # a regenerated partitions.nix cannot silently drift.
+        assert builtins.all (
+          name:
+            (builtins.getAttr name huaweiMariePartitions.partitions).sizeKiB
+            * 1024
+            == builtins.getAttr name huaweiMarieFirmware.partitionGeometry.validation.paddedPayloads
+        ) (builtins.attrNames huaweiMarieFirmware.partitionGeometry.validation.paddedPayloads);
+        # Every `sddNN` in profile.nix must still be the slot of the GPT entry it
+        # claims to be, so renumbering cannot redirect a write silently.
+        assert builtins.all (
+          role:
+            builtins.getAttr role deviceProfiles.huawei-marie.partitions
+            == "sdd"
+            + toString
+            (builtins.getAttr (builtins.getAttr role huaweiMarieDeviceRoles) huaweiMariePartitions.partitions).slot
+        ) (builtins.attrNames huaweiMarieDeviceRoles);
+        # And a role added to profile.nix without a contract entry must not slip
+        # through unchecked. `bootAlias`/`recoveryAlias` name other roles, not
+        # devices, so they are the only permitted exclusions.
+        assert builtins.attrNames huaweiMarieDeviceRoles
+        == builtins.filter
+        (n: !(builtins.elem n ["bootAlias" "recoveryAlias"]))
+        (builtins.attrNames deviceProfiles.huawei-marie.partitions);
+        # The table is now confirmed against the unit, name and slot for all 67
+        # entries, so a regeneration that drifts from the device is a defect
+        # rather than new information.
+        assert deviceProfiles.huawei-marie.storage.tableConfirmedOnDevice == true;
+        # It covers one LUN. These three partitions are on the sibling and in no
+        # version of the table, so if a regeneration ever starts naming them the
+        # claim above has changed meaning and this must be revisited - `persist`
+        # in particular holds per-unit calibration that cannot be regenerated.
+        assert builtins.all (
+          name: !(builtins.hasAttr name huaweiMariePartitions.partitions)
+        ) (builtins.attrNames deviceProfiles.huawei-marie.storage.outsideReconstructedTable);
+        assert huaweiMarieFirmware.deviceTreeEvidence.exactMarTargetAvailable == true;
+        # The device tree found in the firmware must be the board the profile
+        # recorded, and must not be selected by the non-portable runtime index.
+        assert huaweiMarieFirmware.deviceTreeEvidence.overlay.selected.boardId
+        == huaweiMarieBoot.target.board.id;
+        assert huaweiMarieFirmware.deviceTreeEvidence.overlay.selected.matchesProfile.boardName
+        == huaweiMarieBoot.target.board.name;
+        assert huaweiMarieFirmware.deviceTreeEvidence.runtimeIndexIsNotPortable.deviceReported
+        == huaweiMarieBoot.target.board.dtboIndex;
+        assert huaweiMarieFirmware.deviceTreeEvidence.runtimeIndexIsNotPortable.thisBoardIndexIn563
+        != huaweiMarieBoot.target.board.dtboIndex;
+        assert huaweiMarieFirmware.bootContainers.exact == true;
+        assert huaweiMarieFirmware.bootContainers.kernel.header.version == 1;
+        assert huaweiMarieFirmware.bootContainers.kernel.wrapperBytes == 4096;
+        assert huaweiMarieFirmware.bootContainers.ramdiskSideCommon.headerVersion == 0;
+        assert huaweiMarieFirmware.bootContainers.ramdiskSideCommon.wrapperBytes == 0;
+        # No stock payload may claim more room than its partition has. Catches a
+        # regenerated partitions.nix that shrinks a boot-side slot.
+        assert builtins.all (
+          name:
+            builtins.getAttr name huaweiMarieFirmware.bootContainers.stockOccupiedBytes
+            + huaweiMarieFirmware.bootContainers.avbTailOverheadBytes
+            <= (builtins.getAttr name huaweiMariePartitions.partitions).sizeKiB * 1024
+        ) (builtins.attrNames huaweiMarieFirmware.bootContainers.stockOccupiedBytes);
+        assert huaweiMarieFirmware.avbChain.exact == true;
+        assert huaweiMarieFirmware.avbChain.rollbackIndexesAllZero == true;
+        assert huaweiMarieFirmware.avbChain.signingPossible == false;
+        # Every boot-side digest was recomputed from the payload and every image
+        # carries the key its root pins for that partition.
+        assert builtins.all (
+          d: d.recomputed == true && d.embeddedKeyMatchesPin == true
+        ) (builtins.attrValues huaweiMarieFirmware.avbChain.hashDescriptors);
+        # Recovery and normal boot share `kernel`; erecovery shares nothing with
+        # either. This is what makes erecovery the softest first write.
+        assert huaweiMarieBoot.stockBootPaths.recovery.sharesKernelWithNormal == true;
+        assert huaweiMarieBoot.stockBootPaths.erecovery.sharesKernelWithNormal == false;
+        assert huaweiMarieBoot.stockBootPaths.onlyPathIndependentOfKernelPartition == "erecovery";
+        assert builtins.all (
+          p: !(builtins.elem p huaweiMarieBoot.stockBootPaths.erecovery.needs)
+        )
+        huaweiMarieBoot.preferredFirstTarget.leavesIntact;
+        assert huaweiMarieBoot.preferredFirstTarget.path == "erecovery";
+        assert huaweiMarieBoot.initrdSlotCapacity.ramdisk.viableForMobileNixos == false;
+        assert huaweiMarieBoot.initrdSlotCapacity.erecovery_ramdisk.viableForMobileNixos == true;
+        assert huaweiMarieBoot.target.recoveryFallback.sharesNoPartitionWithOtherPaths == true;
+        assert huaweiMarieBoot.target.recoveryFallback.independenceFullyVerified == false;
+        assert builtins.all (b: b == true) (builtins.attrValues huaweiMarieBoot.blockers);
         assert huaweiMarieBoot.complete == false;
+        assert huaweiMarieBoot.missingEvidence.exactPartitionSizes == false;
+        assert huaweiMarieBoot.missingEvidence.exactDeviceTreeTargets == false;
+        assert huaweiMarieBoot.missingEvidence.kernelContainerFormat == false;
+        assert huaweiMarieBoot.missingEvidence.ramdiskContainerFormat == false;
+        assert huaweiMarieBoot.missingEvidence.ramdiskCompression == false;
+        assert huaweiMarieBoot.missingEvidence.avbSigningChain == false;
         assert huaweiMarieBoot.mobileNixos.compatible == false;
+        # Mobile NixOS's default initrd compression happens to be what stock
+        # uses, so the split scaffold needs no recompression step.
+        assert huaweiMarieBoot.mobileNixos.initrdOutput.defaultCompression
+        == huaweiMarieFirmware.bootContainers.ramdiskSideCommon.compression;
+        assert huaweiMarieBoot.splitOutputScaffold.resolvedFormats.ramdiskCompression
+        == huaweiMarieFirmware.bootContainers.ramdiskSideCommon.compression;
         assert huaweiMarieBoot.mobileNixos.initrdOutput.defaultCompression == "gzip";
         assert huaweiMarieBoot.target.observedAliases.boot == "kernel";
         assert huaweiMarieBoot.target.partitions.ramdisk.sizeKiB == 2 * 1024;
@@ -300,6 +446,35 @@
         assert builtins.isFunction (huaweiSplitImagesFor system);
         assert huaweiMarieSplitFixture.contract.layout == "huawei-split";
         assert huaweiMarieSplitFixture.contract.flashCommandsIncluded == false;
+        # A boot set for this device is four partitions, not two: the kernel is a
+        # bare Image.gz, so `dts` and `dto` are boot dependencies even though
+        # nothing here writes them. Assert the pair is declared, that the overlay
+        # resolves by board ID, and that the ID is the one the boot contract
+        # targets -- the runtime `dtbo_idx` addresses a different board in the
+        # firmware package this port was reconstructed from.
+        assert huaweiMarieSplitFixture.contract.deviceTrees.base.partition == "dts";
+        assert huaweiMarieSplitFixture.contract.deviceTrees.overlay.partition == "dto";
+        assert huaweiMarieSplitFixture.contract.deviceTrees.overlay.selectedBy == "board-id";
+        assert huaweiMarieSplitFixture.contract.deviceTrees.overlay.boardId
+        == huaweiMarieBoot.target.board.id;
+        assert huaweiMarieFirmware.deviceTreeEvidence.base.carriesBoardIdentity == false;
+        # The claim in boot-contract.nix `deviceTreesEveryPathConsumes`: neither
+        # device tree is chained by, or hash-described in, any of the three AVB
+        # roots. Checked against every root rather than just `vbmeta`.
+        assert huaweiMarieBoot.stockBootPaths.deviceTreesEveryPathConsumes.coveredByAnyAvbRoot
+        == false;
+        assert builtins.all (
+          name:
+            !(builtins.elem name (
+              builtins.attrNames huaweiMarieFirmware.avbChain.hashDescriptors
+              ++ builtins.concatMap (
+                root: builtins.attrNames root.chainedPartitions
+              ) (builtins.attrValues huaweiMarieFirmware.avbChain.roots)
+            ))
+        )
+        huaweiMarieBoot.stockBootPaths.deviceTreesEveryPathConsumes.partitions;
+        assert huaweiMarieFirmware.deviceTreeEvidence.runtimeIndexIsNotPortable.boardAtThatIndexIn563
+        != huaweiMarieBoot.target.board.id;
         assert huaweiMarieKernel.observed.decompressedSha256 == "39e8fe7311c7af288e344fa1b98315597e57ca5fee3f1c250dc16b265a379bf3";
         assert huaweiMarieKernel.sourceVsObserved.exact == false;
         assert huaweiMarieKernel.buildFeasibility.exactStockEquivalentKernelReady == false;

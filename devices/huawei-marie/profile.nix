@@ -2,6 +2,13 @@
   collectedAt = "2026-08-05T20:10:22Z";
   collectionMethod = "authorized read-only adb";
 
+  # A second authorized read-only pass, run to close entries in `unknown` rather
+  # than to recollect. Everything it re-read agreed with what is above: the whole
+  # `ro.boot.*` set, both vbmeta digests, and /proc/config.gz still hashing to
+  # the value `kernel/config-comparison.nix` records. What it added is below,
+  # under `storage`, `boot.bootloaderRevision` and `software.customization`.
+  reverifiedAt = "2026-08-11";
+
   identity = {
     manufacturer = "HUAWEI";
     model = "MAR-LX3Bm";
@@ -49,6 +56,14 @@
       dVersion = "D1";
       vendorCountry = "entel/pe";
       region = "la";
+      # `ro.hw.custPath`. The running system resolves its customization through
+      # the COTA tree rather than through `cust` directly, which settles whether
+      # the C178 layer is optional: it is not, it is the live path. Note the two
+      # C-versions are different layers and both are real - C178 identifies the
+      # carrier variant here, while the cust and preload *packages* are C605.
+      custPath = "/cust/cota/cust/entel/pe";
+      hwinitCustExists = false;
+      hwinitPreloadExists = false;
     };
 
     vendor = {
@@ -111,11 +126,21 @@
   };
 
   boot = {
+    # Not "not collected" - not exposed. `ro.bootloader` reads the literal string
+    # `unknown` and `ro.boot.bootloader` is empty, and no other property in the
+    # full `ro.boot.*` set carries a version. So no amount of read-only adb can
+    # supply this; it would take `fastboot getvar`, which means rebooting into
+    # the bootloader.
     bootloaderRevision = null;
     basebandRevision = "21C20B388S000C000";
     slotSuffix = null;
     slotCount = null;
     dynamicPartitions = true;
+    # An index into the dto table of the build that was running when this was
+    # collected, and nothing else. It does not address the `.563` table, where
+    # entry 26 is board 7408 and this board (7829) sits at 329 - see
+    # firmware.nix `deviceTreeEvidence.runtimeIndexIsNotPortable`. Resolve the
+    # overlay by boardId, never by this number.
     dtboIndex = 26;
     avbVersion = "1.1";
     verifiedBootState = "green";
@@ -145,7 +170,16 @@
       rawBootPartitions = false;
       sysfsPartitionGeometry = false;
       procPartitions = false;
+      procCmdline = false;
+      # Denied per property, not per directory: `ls /proc/device-tree` enumerates
+      # node and property *names* fine, while reading any of `model`, `compatible`,
+      # `hisi,boardid`, `hisi,boardname`, `hisi,chipid` gives EACCES. Enough to
+      # prove which properties exist, never their values.
       flattenedDeviceTree = false;
+      deviceTreeNamesEnumerable = true;
+      # The one geometry read that works, and how the 67-entry table was
+      # confirmed against the unit. Symlink targets only, so no size information.
+      blockByNameSymlinks = true;
     };
   };
 
@@ -161,6 +195,12 @@
     erecoveryRamdisk = "sdd42";
     erecoveryVendor = "sdd43";
     erecoveryVbmeta = "sdd56";
+    # Two device trees, not one. `dts` is the base FDT and is SoC-generic:
+    # compatible `hisilicon,kirin710`, model `kirin710`, and
+    # `carriesBoardIdentity = false`. Every MAR-specific property arrives from
+    # the separate AOSP dtbo container in `dto`, which the bootloader indexes by
+    # boardId. So a boot definition has to reproduce both, and a base tree alone
+    # describes no board this repo cares about.
     dts = "sdd48";
     dto = "sdd49";
     vbmeta = "sdd57";
@@ -168,14 +208,59 @@
     userdata = "sdd67";
   };
 
+  storage = {
+    # `partitions.nix` was reconstructed from a firmware package's HISIUFS_GPT
+    # packet, so its 67 entries were an inference about this unit until they were
+    # read off it. `ls -l /dev/block/by-name` now confirms all 67 names and all
+    # 67 slot numbers with no mismatch and nothing extra on either side.
+    tableConfirmedOnDevice = true;
+    partitionedLuns = ["sdc" "sdd"];
+    # The reconstruction covers `sdd` only. These three live on a sibling LUN and
+    # appear in no version of the table, so any restore plan built from
+    # partitions.nix silently omits them - including `persist`, which is where
+    # per-unit calibration lives and is exactly what you cannot regenerate.
+    outsideReconstructedTable = {
+      frp = "sdc1";
+      persist = "sdc2";
+      reserved1 = "sdc3";
+    };
+    # `/sys/block/*/size` and `/proc/partitions` are both denied to the shell
+    # domain, so by-name symlinks are the only geometry an unprivileged read
+    # gets: names and slots, never sizes.
+    lunSizesReadable = false;
+  };
+
+  # Only what is still open. Three entries were retired against evidence now in
+  # the tree, and are listed here so they are not re-opened: the boot header and
+  # wrapper layout (firmware.nix `bootContainers.exact`), the partition table
+  # (`partitionGeometry.exact`, 67 entries), and the slot scheme - the table has
+  # no `_a`/`_b` name and no complete pair, which is the direct evidence the
+  # absent Android properties could not supply. boot-contract.nix
+  # `missingEvidence` carries the same retirements with their reasoning.
   unknown = [
-    "boot image header and Huawei image wrappers"
-    "GPT-confirmed partition sizes; official source only supplies candidates"
-    "bootloader revision and accepted unlock path"
+    # Narrowed to the unlock path alone. The revision half is not an open
+    # question any more, it is an unanswerable one over adb - see
+    # `boot.bootloaderRevision`.
+    "accepted unlock path"
     "exact MAR-LGRP2-OVS 10.0.0.564 base archive and image hashes"
-    "whether the Entel C178 COTA layer is required for full recovery"
-    "kernel source revision and MAR-L03B defconfig"
-    "slot scheme; absent Android properties are not proof of non-A/B"
+    # Retired: `software.customization.custPath` shows the live system resolving
+    # customization through the COTA tree, so the C178 layer is not an optional
+    # decoration on top of a C605 base - it is the path in use.
+    # The published source ships `merge_kirin710_defconfig`, an SoC-wide merge
+    # with no MAR target in it. It regenerates reproducibly and builds, but 28
+    # assignments still differ from the running unit's /proc/config.gz -
+    # concentrated in module signing and trusted keyrings - so no configuration
+    # here is the stock one.
+    "MAR-L03B defconfig; source supplies only the merged kirin710 one"
+    # Still open, and now known to be closed to unprivileged reads rather than
+    # merely uncollected. The live tree does prove an identity-bearing overlay
+    # was applied - its root carries `hisi,boardid` and `hisi,boardname`, which
+    # the SoC-generic base does not - but every one of those property values is
+    # denied to the shell domain, and the applied tree carries no
+    # `hisi,dtbo_idx`. So `ro.boot.dtbo_idx = 26` stays the bootloader's own
+    # unverifiable claim, and it does not address the `.563` table.
+    "which dto entry the live bootloader selects"
+    # Needs fastboot, so it is out of reach of read-only adb by construction.
     "temporary-boot support"
   ];
 }

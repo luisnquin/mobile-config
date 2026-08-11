@@ -6,6 +6,13 @@
 }: {
   kernel,
   ramdisk,
+  # This device has two device trees, on two partitions: `dts` holds the base
+  # FDT and `dto` an Android DTBO container the bootloader picks an entry from.
+  # Neither is a payload built here - both stay stock - but the kernel is a bare
+  # Image.gz with no appended DT, so it cannot boot without them and a boot set
+  # that does not name them is under-described. Required, not optional, so the
+  # pair has to be stated before this builder can produce a manifest at all.
+  deviceTrees,
   evidence,
   kernelCapacityBytes,
   ramdiskCapacityBytes,
@@ -48,13 +55,35 @@ assert lib.assertMsg (
     "xz"
   ]
 ) "unsupported ramdiskCompression";
+assert lib.assertMsg (
+  builtins.isAttrs deviceTrees
+  && lib.all (side: builtins.hasAttr side deviceTrees && builtins.isAttrs deviceTrees.${side}) [
+    "base"
+    "overlay"
+  ]
+) "deviceTrees must describe both the base and the overlay";
+assert lib.assertMsg (
+  builtins.isString deviceTrees.base.partition
+  && deviceTrees.base.partition != ""
+  && builtins.isString deviceTrees.overlay.partition
+  && deviceTrees.overlay.partition != ""
+) "each device tree must name the partition it is read from";
+# `ro.boot.dtbo_idx` is an index into whichever DTO happened to be installed,
+# and it does not survive a firmware change: in the `.563` package this board is
+# at 329 while 26 is a different board. Selecting by index is therefore how you
+# boot someone else's device tree, so the contract only accepts a board ID.
+assert lib.assertMsg (
+  deviceTrees.overlay.selectedBy == "board-id" && builtins.isInt deviceTrees.overlay.boardId
+) "the overlay must be selected by integer board ID, never by table index";
   runCommand "huawei-marie-split-images" {
     nativeBuildInputs = [
       coreutils
       jq
     ];
+    deviceTreesJson = builtins.toJSON deviceTrees;
     passthru.contract = {
       inherit
+        deviceTrees
         evidence
         kernelCapacityBytes
         kernelFormat
@@ -91,10 +120,14 @@ assert lib.assertMsg (
       --argjson ramdiskCapacity ${toString ramdiskCapacityBytes} \
       --arg ramdiskCapacityEvidence ${lib.escapeShellArg evidence.ramdiskCapacity} \
       --arg ramdiskFormatEvidence ${lib.escapeShellArg evidence.ramdiskFormat} \
+      --argjson deviceTrees "$deviceTreesJson" \
       '{
-        schema: 1,
+        schema: 2,
         layout: "huawei-split",
         flashCommandsIncluded: false,
+        requiredNotWritten: {
+          deviceTrees: $deviceTrees
+        },
         artifacts: {
           kernel: {
             file: "kernel",
