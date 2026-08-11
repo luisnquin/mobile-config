@@ -264,88 +264,132 @@ in {
   # boot image carries it. `buildvariant` is consumed by the Android init this
   # port replaces; it is kept because dropping arguments the bootloader chain
   # may parse is a second variable to change at once.
-  boot.kernelParams = [
-    "bootopt=64S3,32N2,64N2"
-    "buildvariant=user"
+  boot.kernelParams =
+    [
+      "bootopt=64S3,32N2,64N2"
+      "buildvariant=user"
+    ]
+    ++ lib.optionals (config.mobile.hardware.socs.mediatek-mt6765.kernelTree == "mainline") [
+      # The mainline series puts this in the device tree, and on this device the
+      # device tree is not where it survives.
+      #
+      # `mt6765-xiaomi-garden-common.dtsi` sets
+      # `chosen/bootargs = "clk_ignore_unused"` with the comment "keeps getting
+      # watchdog rebooted without it for now!", and the built DTB carries it --
+      # verified by decompiling
+      # `dtbs/mediatek/mt6762g-xiaomi-dandelion.dtb` out of
+      # `.#xiaomi-dandelion-mainline-kernel`.
+      #
+      # MediaTek's LK overwrites `/chosen/bootargs` with the boot image header's
+      # cmdline before entering the kernel, so that property never reaches Linux.
+      # The proof is on this unit rather than in LK's source: the vendor
+      # `mt6765.dts` also carries its own `chosen/bootargs` asking for
+      # `console=ttyS0,921600n1` and nothing else, the vendor build sets
+      # `CONFIG_CMDLINE_FROM_BOOTLOADER=y` so `/chosen/bootargs` *is* the whole
+      # cmdline -- and the panel demonstrably carries `/dev/console`. It cannot,
+      # unless the `console=tty1` this option list ends with replaced that
+      # property wholesale.
+      #
+      # So on the mainline arm the parameter the series calls load-bearing has
+      # been silently absent from every boot. Restoring it here is free if LK
+      # ever did preserve the property: a duplicate `clk_ignore_unused` parses
+      # the same as one.
+      #
+      # Not a fix for anything observed -- this port has never been booted with
+      # the parameter present, so what it prevents on *this* board is still the
+      # upstream author's claim, not a measurement.
+      "clk_ignore_unused"
+    ]
+    ++ [
+      # `earlycon` is deliberately absent, and so is the chosen/stdout-path patch
+      # that used to accompany it in the kernel derivation. Together they are why
+      # this port did not boot; apart, either is harmless. Nine boot attempts
+      # separated them, the last four against a repacked stock recovery image
+      # known to boot:
+      #
+      #   dtb       cmdline                              result
+      #   stock     stock                                boots
+      #   stock     candidate, earlycon included         boots
+      #   candidate stock                                boots
+      #   candidate candidate                            HWT at ~30 s
+      #   candidate stock + earlycon, nothing else       HWT at ~44 s
+      #
+      # A bare `earlycon` resolves its device through chosen/stdout-path. Stock's
+      # tree has none, so on stock it finds nothing and does nothing -- which is
+      # why it looked free. The patch supplied one pointing at /serial@11020000
+      # (reg 0x11002000; the node itself is byte-identical to stock's), so the
+      # kernel mapped and wrote MT6765 UART0 before the clock subsystem existed.
+      # LK leaves that clock gated on a user build, and an APB access to a gated
+      # block hangs the bus with no console alive to report it. LK's watchdog
+      # collects it ~30 s later. That is every failed attempt in this port's
+      # history, exactly.
+      #
+      # Do not re-add it to chase an early-boot problem. It is the early-boot
+      # problem. `earlycon=mtk8250,mmio32,0x11002000,921600n1` is not an escape
+      # either: that form needs EARLYCON_DECLARE, compiled only under
+      # CONFIG_FPGA_EARLY_PORTING, which this defconfig does not set -- and it
+      # would touch the same gated register anyway.
 
-    # `earlycon` is deliberately absent, and so is the chosen/stdout-path patch
-    # that used to accompany it in the kernel derivation. Together they are why
-    # this port did not boot; apart, either is harmless. Nine boot attempts
-    # separated them, the last four against a repacked stock recovery image
-    # known to boot:
-    #
-    #   dtb       cmdline                              result
-    #   stock     stock                                boots
-    #   stock     candidate, earlycon included         boots
-    #   candidate stock                                boots
-    #   candidate candidate                            HWT at ~30 s
-    #   candidate stock + earlycon, nothing else       HWT at ~44 s
-    #
-    # A bare `earlycon` resolves its device through chosen/stdout-path. Stock's
-    # tree has none, so on stock it finds nothing and does nothing -- which is
-    # why it looked free. The patch supplied one pointing at /serial@11020000
-    # (reg 0x11002000; the node itself is byte-identical to stock's), so the
-    # kernel mapped and wrote MT6765 UART0 before the clock subsystem existed.
-    # LK leaves that clock gated on a user build, and an APB access to a gated
-    # block hangs the bus with no console alive to report it. LK's watchdog
-    # collects it ~30 s later. That is every failed attempt in this port's
-    # history, exactly.
-    #
-    # Do not re-add it to chase an early-boot problem. It is the early-boot
-    # problem. `earlycon=mtk8250,mmio32,0x11002000,921600n1` is not an escape
-    # either: that form needs EARLYCON_DECLARE, compiled only under
-    # CONFIG_FPGA_EARLY_PORTING, which this defconfig does not set -- and it
-    # would touch the same gated register anyway.
+      # Mobile NixOS puts `loglevel=4` on the cmdline, which drops KERN_INFO and
+      # below — i.e. most of what a bring-up needs to see. This overrides it for
+      # every console. The screen is the only observation channel this port has
+      # (CONFIG_FRAMEBUFFER_CONSOLE=y in the built kernel, `console=tty1` last on
+      # this command line), and it is only useful if something is printed on it.
+      # Remove once the port boots.
+      "ignore_loglevel"
 
-    # Mobile NixOS puts `loglevel=4` on the cmdline, which drops KERN_INFO and
-    # below — i.e. most of what a bring-up needs to see. This overrides it for
-    # every console. The screen is the only observation channel this port has
-    # (CONFIG_FRAMEBUFFER_CONSOLE=y in the built kernel, `console=tty1` last on
-    # this command line), and it is only useful if something is printed on it.
-    # Remove once the port boots.
-    "ignore_loglevel"
+      # Stage-2 has no observation channel of its own. systemd's default log
+      # target is the journal, and the journal is unreadable while the boot it
+      # describes is still hanging. Routing PID 1 through /dev/kmsg instead puts
+      # it in the kernel ring buffer, where mobile.bringup.rawLog can copy it to a
+      # raw offset on p41 every two seconds.
+      #
+      # Not pstore, but the reason recorded here used to be the wrong one.
+      # CONFIG_MTK_RAM_CONSOLE, CONFIG_PSTORE_RAM and CONFIG_PSTORE_CONSOLE are
+      # all set, and after a power-off neither /proc/last_kmsg nor
+      # /sys/fs/pstore had anything -- which was read as "the region is not
+      # preserved on this SoC". It is not evidence of that. A RAM-backed pstore
+      # is only expected to survive a *warm* reset, where the DRAM rails stay up
+      # and the SoC re-enters its boot ROM. A power-off is the one condition
+      # under which it is designed to come back empty.
+      #
+      # So pstore has never actually been tested against the failure it exists
+      # for. What still rules it out for *this* channel is scope rather than
+      # capability: stage-2 hangs without resetting, and a log that only appears
+      # after a reset cannot be read while the boot it describes is still up.
+      # The flash ring can be read live. Where the reset does happen -- the
+      # mainline arm, which resets on the watchdog with no console at all -- see
+      # ../README.md, "What the mainline arm can and cannot report".
+      #
+      # `debug` is deliberately not used: kmsg is echoed to `console=tty1`, the
+      # framebuffer, and fbcon scrolls slowly enough that debug-level output is
+      # itself indistinguishable from a hang.
+      "systemd.log_target=kmsg"
+      "systemd.log_level=info"
+      "systemd.show_status=true"
 
-    # Stage-2 has no observation channel of its own. systemd's default log
-    # target is the journal, and the journal is unreadable while the boot it
-    # describes is still hanging. Routing PID 1 through /dev/kmsg instead puts
-    # it in the kernel ring buffer, where mobile.bringup.rawLog can copy it to a
-    # raw offset on p41 every two seconds.
-    #
-    # Not pstore: CONFIG_MTK_RAM_CONSOLE, CONFIG_PSTORE_RAM and
-    # CONFIG_PSTORE_CONSOLE are all set, and after a power-off neither
-    # /proc/last_kmsg nor /sys/fs/pstore had anything. The symbols being present
-    # is not evidence the region is preserved, and that is why the log ring
-    # writes to flash instead.
-    #
-    # `debug` is deliberately not used: kmsg is echoed to `console=tty1`, the
-    # framebuffer, and fbcon scrolls slowly enough that debug-level output is
-    # itself indistinguishable from a hang.
-    "systemd.log_target=kmsg"
-    "systemd.log_level=info"
-    "systemd.show_status=true"
-
-    # The VT blank timer defaults to 600 s and has to be off, because on this
-    # device nothing routinely unblanks it. Console blanking is cleared by
-    # `do_unblank_screen()`, reached from the vt keyboard handler or a KDSETMODE
-    # transition -- never by console *output*. The dashboard writes to tty1
-    # every five seconds and the framebuffer stays frozen anyway.
-    #
-    # It presents as a hardware fault and is not one. `vesa_blank_mode` is 0, so
-    # the timer soft-blanks: fbcon fills the framebuffer with the background and
-    # stops rendering, but `fb_blank` is never called. The backlight therefore
-    # stays lit at whatever level the panel last set, `/dev/vcs1` keeps updating
-    # with a live clock, `fb0/state` reads RUNNING and fbcon stays bound --
-    # while /dev/fb0 does not change by a single byte. On 2026-08-09 that cost
-    # an evening and two wrong root causes (a stale pan offset, then a stranded
-    # `ops->graphics`) before `/sys/module/kernel/parameters/consoleblank`
-    # was read and answered 600.
-    #
-    # `setterm --blank 0 >/dev/tty1` does not substitute for this: it left the
-    # parameter at 600. Recovering a screen already blanked this way needs a
-    # KD_GRAPHICS -> KD_TEXT cycle on tty1, which routes through
-    # `do_unblank_screen(1)`.
-    "consoleblank=0"
-  ];
+      # The VT blank timer defaults to 600 s and has to be off, because on this
+      # device nothing routinely unblanks it. Console blanking is cleared by
+      # `do_unblank_screen()`, reached from the vt keyboard handler or a KDSETMODE
+      # transition -- never by console *output*. The dashboard writes to tty1
+      # every five seconds and the framebuffer stays frozen anyway.
+      #
+      # It presents as a hardware fault and is not one. `vesa_blank_mode` is 0, so
+      # the timer soft-blanks: fbcon fills the framebuffer with the background and
+      # stops rendering, but `fb_blank` is never called. The backlight therefore
+      # stays lit at whatever level the panel last set, `/dev/vcs1` keeps updating
+      # with a live clock, `fb0/state` reads RUNNING and fbcon stays bound --
+      # while /dev/fb0 does not change by a single byte. On 2026-08-09 that cost
+      # an evening and two wrong root causes (a stale pan offset, then a stranded
+      # `ops->graphics`) before `/sys/module/kernel/parameters/consoleblank`
+      # was read and answered 600.
+      #
+      # `setterm --blank 0 >/dev/tty1` does not substitute for this: it left the
+      # parameter at 600. Recovering a screen already blanked this way needs a
+      # KD_GRAPHICS -> KD_TEXT cycle on tty1, which routes through
+      # `do_unblank_screen(1)`.
+      "consoleblank=0"
+    ];
 
   # The one observation channel that does not depend on this port working.
   #

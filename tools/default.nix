@@ -92,6 +92,16 @@ in {
     "Reboot via sysrq, which works in stage-1 where adb reboot does not"
     ./reboot.sh;
 
+  # Deliberately separate from dandelion-flash-bootimg, which writes the image
+  # but never the thing that decides whether the image is entered: what LK boots
+  # next lives in `para`, and clearing it is what makes an untested kernel on
+  # `recovery` a single power-cycle away from stock Android instead of a reset
+  # loop with no channel.
+  dandelion-bcb =
+    mkTool "dandelion-bcb"
+    "Show, clear or set the boot control block in para, which is what LK boots next"
+    ./bcb.sh;
+
   # The only tool here that talks to a booted system rather than to the stage-1
   # latch, and the only one that needs nix on the host side.
   dandelion-switch =

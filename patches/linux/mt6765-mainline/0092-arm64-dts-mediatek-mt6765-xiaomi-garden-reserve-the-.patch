@@ -1,0 +1,59 @@
+From da1d8c84671d2e01c2289ca663449862e935f9a7 Mon Sep 17 00:00:00 2001
+From: dandelion-port <noreply@localhost>
+Date: Mon, 10 Aug 2026 19:22:35 -0500
+Subject: [PATCH 92/92] arm64: dts: mediatek: mt6765-xiaomi-garden:
+ reserve the lk framebuffer
+
+simplefb maps the inherited lk framebuffer with ioremap_wc(). arm64
+ioremap_prot() rejects any physical address in the linear map:
+
+    /* Do not allow RAM to be mapped. */
+    if (WARN_ON(pfn_is_map_memory(__phys_to_pfn(phys_addr))))
+            return NULL;
+
+so whenever lk reports the framebuffer range as part of /memory, the
+probe fails -ENOMEM, no fbdev is registered, fbcon binds nothing and
+console=tty1 resolves to a VT with no framebuffer behind it. That is the
+whole console on a board with no usable UART.
+
+request_mem_region() does not save it either: simplefb_probe() downgrades
+its failure to a dev_warn() and maps the resource anyway, so the region
+being System RAM produces no fatal error and no output.
+
+Reserve exactly the range the chosen/framebuffer node already declares,
+with no-map, so the ioremap is legal and the page allocator cannot hand
+those pages out from under the console.
+---
+ .../mediatek/mt6765-xiaomi-garden-common.dtsi | 19 +++++++++++++++++++
+ 1 file changed, 19 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/mediatek/mt6765-xiaomi-garden-common.dtsi b/arch/arm64/boot/dts/mediatek/mt6765-xiaomi-garden-common.dtsi
+index 777f769f5..f2fe4207d 100644
+--- a/arch/arm64/boot/dts/mediatek/mt6765-xiaomi-garden-common.dtsi
++++ b/arch/arm64/boot/dts/mediatek/mt6765-xiaomi-garden-common.dtsi
+@@ -35,6 +35,25 @@
+         };
+     };
+ 
++    reserved-memory {
++        #address-cells = <2>;
++        #size-cells = <2>;
++        ranges;
++
++        /*
++         * The framebuffer above is inherited from the lk bootloader, and
++         * simplefb reaches it with ioremap_wc(). arm64's ioremap_prot()
++         * refuses any address in the linear map -- "Don't allow RAM to be
++         * mapped", arch/arm64/mm/ioremap.c -- so unless this range is out of
++         * /memory, the probe fails with -ENOMEM and the device has no console
++         * at all. Carve it out with no-map so the ioremap is legal.
++         */
++        framebuffer@7ec50000 {
++            reg = <0 0x7ec50000 0 0xfb0000>;
++            no-map;
++        };
++    };
++
+     ldo18_lcd: ldo18-lcd {
+         compatible = "regulator-fixed";
+         regulator-name = "ldo18-lcd";

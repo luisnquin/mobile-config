@@ -34,9 +34,9 @@ mobile-nixos.kernel-builder {
     hash = "sha256-kQakYF2p4x/xdlnZWHgrgV+VkaswjQOw7iGq1sfc7Us=";
   };
 
-  # 91 patches, applied in filename order. 89 of them are Arseniy Velikanov's
+  # 92 patches, applied in filename order. 89 of them are Arseniy Velikanov's
   # and Brandon Boese's MT6765 series from dandelion64-Archives/linux-mt6762-garden,
-  # rebased from 6.5-rc3 onto v6.18; the remaining two are ours:
+  # rebased from 6.5-rc3 onto v6.18; the remaining three are ours:
   #
   #   0090  the pm-domains bus-protection API moved from separate
   #         .bp_infracfg/.bp_smi arrays to a single .bp_cfg whose entries name
@@ -44,6 +44,13 @@ mobile-nixos.kernel-builder {
   #   0091  mmc0 is `status = "disabled"` in mt6765.dtsi and the garden device
   #         trees only ever enabled mmc1 (the SD slot). The rootfs is on the
   #         eMMC, so without this the kernel boots and finds no root device.
+  #   0092  the lk framebuffer the series hands to simplefb was never carved out
+  #         of /memory, and arm64 `ioremap_prot()` refuses to map anything in
+  #         the linear map. Without the reservation the probe returns -ENOMEM
+  #         and `console=tty1` has no framebuffer behind it -- on a board whose
+  #         UART is `status = "disabled"` in this tree and forbidden on the
+  #         cmdline besides, that is every console the device has. See
+  #         ../README.md, "What the mainline arm can and cannot report".
   #
   # Two commits from the garden series are deliberately absent: the Samsung
   # Galaxy Tab A7 Lite device tree and its fixup. Different device, and its

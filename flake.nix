@@ -174,10 +174,17 @@
       # same networking.
       graphical = evalFor system device {mobile.session.sxmo.enable = true;};
 
-      # Linux 6.18 LTS instead of the vendor 4.9.190 tree. Compiles and
-      # produces a device tree; never booted on hardware. Only the kernel and
-      # the boot image are exposed -- the rootfs is the same closure either
-      # way, and building it here would only duplicate it.
+      # Linux 6.18 LTS instead of the vendor 4.9.190 tree. Written to `recovery`
+      # once, at 91 patches: it reset in a loop before userspace, with no USB
+      # gadget of any kind, so it left no channel to read. Since then it has
+      # gained the framebuffer reservation (patch 0092) and `clk_ignore_unused`,
+      # neither of which has been on the device. Do not flash it again without
+      # reading devices/xiaomi-dandelion/README.md, "Trying the mainline arm
+      # without losing the device" -- the bootloop is a property of `para`, not
+      # of the kernel, and it is avoidable.
+      #
+      # Only the kernel and the boot image are exposed -- the rootfs is the same
+      # closure either way, and building it here would only duplicate it.
       mainline = evalFor system device {
         mobile.hardware.socs.mediatek-mt6765.kernelTree = "mainline";
       };
