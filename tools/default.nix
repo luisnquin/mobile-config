@@ -38,6 +38,24 @@
     };
 
   mkTool = mkTool' [];
+
+  # No preamble. lib.sh carries dandelion's serial, root partition and log-ring
+  # offsets, none of which are marie's; a marie tool that inherited them would
+  # guard on the wrong identity. So this builder ships the tool text alone.
+  mkBareTool = extraInputs: name: description: script:
+    pkgs.writeShellApplication {
+      inherit name;
+      runtimeInputs =
+        [
+          pkgs.android-tools
+          pkgs.coreutils
+          pkgs.gnugrep
+          pkgs.gnused
+        ]
+        ++ extraInputs;
+      text = builtins.readFile script;
+      meta = {inherit description;};
+    };
 in {
   dandelion-latch =
     mkTool "dandelion-latch"
@@ -101,6 +119,15 @@ in {
     mkTool "dandelion-bcb"
     "Show, clear or set the boot control block in para, which is what LK boots next"
     ./bcb.sh;
+
+  # The only marie tool, and the only one here that uses fastboot: it reaches
+  # the two facts read-only adb cannot -- the bootloader revision, which the OS
+  # reports as `unknown`, and whether a locked Huawei bootloader answers at all.
+  # gawk for the adb-device parse; strictly getvar and reboot, never a write.
+  marie-fastboot-probe =
+    mkBareTool [pkgs.gawk] "marie-fastboot-probe"
+    "Reboot huawei-marie into its bootloader, dump every getvar it discloses, and reboot back -- read-only, no flash"
+    ./marie-fastboot-probe.sh;
 
   # The only tool here that talks to a booted system rather than to the stage-1
   # latch, and the only one that needs nix on the host side.
