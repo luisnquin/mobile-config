@@ -188,6 +188,13 @@
       mainline = evalFor system device {
         mobile.hardware.socs.mediatek-mt6765.kernelTree = "mainline";
       };
+
+      # Keep the experimental artifacts addressable while making their package
+      # outputs refuse evaluation by default.
+      markBroken = drv:
+        drv.overrideAttrs (oldAttrs: {
+          meta = (oldAttrs.meta or {}) // {broken = true;};
+        });
     in {
       "${device}-boot-img" = eval.outputs.android.android-bootimg;
       "${device}-recovery-img" = eval.outputs.android.android-recovery;
@@ -198,8 +205,8 @@
       "${device}-graphical-fastboot-images" = graphical.outputs.android.android-fastboot-images;
       "${device}-graphical-system" = graphical.config.system.build.toplevel;
 
-      "${device}-mainline-kernel" = mainline.config.mobile.boot.stage-1.kernel.package;
-      "${device}-mainline-boot-img" = mainline.outputs.android.android-bootimg;
+      "${device}-mainline-kernel" = markBroken mainline.config.mobile.boot.stage-1.kernel.package;
+      "${device}-mainline-boot-img" = markBroken mainline.outputs.android.android-bootimg;
     };
   in {
     lib = {
