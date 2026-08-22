@@ -1,10 +1,10 @@
 # Xiaomi Redmi 9A — `dandelion`
 
-**This is not a usable phone.** Stage-1 boots, lights the panel, prints a console
-and serves key-authenticated SSH over the USB gadget. A root filesystem is
-written and hash-verified, and `switch_root` happens — but systemd has never
-reached a service manager, so there is no session, no touch and no graphical
-shell. Flashing it replaces your recovery partition.
+**This is not yet a usable phone.** As of 2026-08-22, the vendor kernel boots
+stage-1, mounts a hash-verified root filesystem, switches root and reaches a
+running systemd with no failed units. A TTY, adb and RNDIS work. Touch, audio,
+modem and suspend remain untested, and there is no KMS path for a Wayland
+session. Installing it replaces `recovery` and Android `userdata`.
 
 ## Target
 
@@ -20,7 +20,7 @@ of these is a different device for porting purposes.
 | Touch | `NVTCapacitiveTouchScreen` |
 | Kernel | arm64 4.9.190 |
 | Firmware built against | `V12.0.22.0.QCDMIXM`, Android 10, SPL 2023-02-01 |
-| Verified boot | AVB 1.1, bootloader unlocked, orange state |
+| Verified boot | AVB 1.1, bootloader unlocked, orange state; observed again on 2026-08-22 |
 | Slots | non-A/B; separate `boot`, `recovery`, `dtbo`, `vbmeta`; dynamic `super` |
 
 Droidian shipped and then **withdrew** dandelion builds after brick reports on
@@ -45,15 +45,90 @@ evidence that revision 1.39.0 is safe.
 | Activating a new generation without a reflash | works — `nix run .#dandelion-switch`, guarded |
 | Bounded journal and store growth | works — `mobile.services.maintenance` |
 | Tailscale daemon | enrolled as `thompson`, rules install, reachable — but rides the cable, see below |
-| Wi-Fi | driver built in and firmware deployed — **awaiting a `recovery` flash**, see below |
+| Boot selector | **technical debt**; persistent `boot-recovery` currently boots NixOS directly, see below |
+| Wi-Fi | driver-bearing `recovery` flashed on 2026-08-22; no wlan interface appeared, needs diagnosis |
 | Vendor firmware (wlan, bt, fm, touch) | extracted and installed, 32 blobs |
-| Touch, audio, modem, suspend | **untested** |
+| Touch | controller probes, but `novatek_ts_djn_fw.bin` returns `-ENOENT`; input untested |
+| Audio, modem, suspend | **untested** |
 | Charging | charges from a wall charger; net-drains on a PC port |
 | KMS / Wayland compositor | **impossible as-is**, see below |
 
 `boot` has never been written on the development unit. Neither have `dtbo`,
 `vbmeta`, `super`, `lk`, `preloader_*`, `seccfg`, `nvram`, `nvdata`, or the
 partition table. `userdata` and `para` have: see "Where the rootfs lives" below.
+
+## The bootloader lock incident
+
+From 2026-08-11 through 2026-08-22 this device had **no write channel**. A
+specialist returned it unlocked. Live fastboot then reported:
+
+```
+product: dandelion
+unlocked: yes
+secure: no
+serialno: HADAHAORHAV8YHB6
+```
+
+The incident remains here because it explains why the current boot contract
+must not depend on Android preserving either the unlock state or `userdata`.
+
+A flat battery dropped the device out of stage-1 and LK fell back to `boot`
+(p33). Stock MIUI came up, could not mount the latched ext4 on `userdata`, and
+reformatted p41 to f2fs — the rootfs is gone. It also came up with the bootloader
+locked. LK is unambiguous about it:
+
+```
+fastboot getvar unlocked             -> unlocked: no
+fastboot getvar secure               -> secure: yes
+fastboot flashing get_unlock_ability -> unlock_ability = 0
+fastboot flash recovery <img>        -> FAILED (remote: 'not allowed in locked state')
+fastboot boot <img>                  -> FAILED (remote: 'not allowed in locked state')
+```
+
+Both refusals arrive at the `flash:`/`boot:` command, after the download and
+before any write, so probing this costs nothing.
+
+The lock was never in the way before because the bootloader was unlocked. The
+first write was plain `fastboot flash recovery`, exactly as documented under
+"Flash and connect"; every write after that went through stage-1 with root over
+adb, which is what `tools/flash-bootimg.sh` exists for. So fastboot was the
+bootstrap channel and adb was the iteration channel. During the incident,
+losing the unlock removed the bootstrap channel. `recovery` held the mainline
+6.18 image, which brought up no gadget, and `userdata` no longer held a rootfs.
+The three failures composed: locked LK, no root on stock, no stage-1.
+
+Recovery paths considered while it was locked:
+
+- **BROM.** `mtkclient` runs the Kamakiri exploit before LK is involved at all, so
+  the lock does not apply to it. Entry by key combo is proven on this unit with
+  the battery installed and the case closed. Pass **no** `--preloader`: it forces
+  the branch at `xflash_lib.py:1138`, which fails immediately, and omitting it
+  takes the search branch that matches the eMMC CID against the bundled EMI
+  blobs. This needs hands on the device.
+- **Mi Unlock.** `oem_unlock_allowed` reads `null` — the wipe reset it — so the
+  Developer Options toggle has to be set first, then a bound Mi account, Xiaomi's
+  Windows-only tool, and a 168-hour wait.
+
+`mtkclient` can also write `seccfg` to unlock directly. The method the specialist
+used was not recorded, so the live fastboot state proves the result but not the
+mechanism. `seccfg` remains outside this port's normal flashing workflow because
+a failed write does not leave an independent restore path.
+
+## Deployment verified on 2026-08-22
+
+Fastboot accepted the vendor 4.9.190 image in `recovery`. Its SHA-256 is
+`14ae2e31e21111cb5d4861950b2d9e36d8fffd73d7312329e9d84bdb2229430e`.
+The image is 26,605,568 bytes, uses Android boot header v2 and fits the
+67,108,864-byte partition. `boot`, `dtbo`, `vbmeta`, `super` and the bootloader
+partitions were not written.
+
+The 2,873,675,776-byte `NIXOS_SYSTEM` image was written to `userdata` in checked
+32 MiB chunks. A separate readback of all 701,581 image blocks matched SHA-256
+`f3d740a1307b4eb34b191b4f07f3eda5967d97dff50ebb89d41bd11d51b2670e`.
+The filesystem was then grown offline to 4,194,304 4 KiB blocks, ending before
+the raw log ring. After reboot, adb returned across `switch_root`, systemd
+reported `running`, no units were failed, RNDIS had `172.16.42.1`, and the
+default route pointed at the host.
 
 ## Flash and connect
 
@@ -312,6 +387,36 @@ The rootfs goes to **`userdata` (`mmcblk0p41`, 24 353 160 704 bytes)**, streamed
 over `adb exec-out`/SSH with `dd`, not fastboot. It is outside AVB, so nothing
 about `vbmeta` or rollback changes.
 
+### Boot selector technical debt
+
+The current setup is persistent recovery boot, not dual boot. On 2026-08-22,
+`dandelion-bcb` read `boot-recovery` back from the command field in `para` after
+a full NixOS boot. Normal resets therefore enter the Mobile NixOS image in
+`recovery` without showing a choice.
+
+A GRUB port is the wrong model. LK has already loaded the recovery kernel before
+stage-1 can draw anything. The practical selector is a stage-1 menu on `tty1`,
+driven directly from the volume and power input events. Candidate entries are:
+
+- continue into the current NixOS system;
+- select another verified NixOS generation that uses the already-running
+  kernel, after stage-1 can validate its init path and fallback;
+- set the proven `bootonce-bootloader` command and reboot into fastboot;
+- power off.
+
+Android remains blocked as a menu entry. Its former f2fs `userdata` is now the
+ext4 `NIXOS_SYSTEM` root. The previous fallback into MIUI reformatted that
+partition and erased NixOS. Clearing `boot-recovery` would also make Android the
+persistent default, so the menu would not return on the following normal boot.
+An Android entry needs separate storage and proven one-shot boot semantics
+first.
+
+Done means the selector is one process, has host tests for its key state machine,
+defines and tests its timeout/default, never writes `para` on inactivity, and
+reads every BCB write back before reset. Cold-boot tests must prove each entry
+and its return path. Replacing LK or writing a bootloader partition is not part
+of this work.
+
 `switch_root` drops USB, and that is expected rather than a fault:
 `boot.postBootCommands` in mobile-nixos' `modules/adb.nix` pkills `adbd` before
 `exec`ing systemd, which tears down the functionfs backing `ffs.adb` and unbinds
@@ -322,14 +427,14 @@ staying dark says nothing more precise than "it did not"**. The same is true of
 the network: `modules/usb-network.nix` replaces the stage-1 `ifconfig` + `udhcpd`
 pair, and it is equally late.
 
-On the development unit the host bus saw exactly one enumeration after the
-reboot — stage-1, thirteen seconds, then disconnect — and nothing since. One
-enumeration means no reboot loop and no watchdog reset: the kernel is alive and
-stage-2 is stuck somewhere ahead of `multi-user.target`. Which is unsurprising,
-because systemd has never actually run as PID 1 on this device; stage-1 is mruby,
-and the only part of systemd exercised so far is udev.
+On an earlier deployment the host bus saw exactly one enumeration after reboot:
+stage-1 at thirteen seconds, then a disconnect with no return. That ruled out a
+reboot loop and placed the failure between `switch_root` and
+`multi-user.target`. The 2026-08-22 deployment crossed that boundary. Stage-1
+returned, disconnected during `switch_root`, stage-2 adb returned, and systemd
+settled at `running` with no failed units.
 
-### Reading a stage-2 that never came back
+### Reading the earlier stage-2 failure
 
 The panel carries `console=tty1` and is the only live channel. Three mechanisms
 were added for this, in the order they were tried, and the first two are
