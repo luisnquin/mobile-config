@@ -49,6 +49,7 @@
 #define GRN "\033[32m"
 #define YEL "\033[33m"
 #define CYN "\033[36m"
+#define WHT "\033[1;37m"
 
 #define MAX_ROWS 128
 #define MAX_LINE 2048
@@ -252,6 +253,9 @@ static void state_of(const char *state, char *out, size_t n) {
   snprintf(out, n, "%s%-8s" RST, colour, state);
 }
 
+static int screen_rows = 24;
+static int screen_cols = 80;
+
 /* ---- frame buffer ---------------------------------------------------------- */
 
 struct screen {
@@ -313,6 +317,12 @@ static void emit(const char *fmt, ...) {
  * which on a dashboard where only the clock moves is most of them. */
 static void render(int force) {
   int rows = cur->n > prev->n ? cur->n : prev->n;
+  /* Clamped to the real screen: a row address past the last physical row
+   * gets clamped onto that last row by the vt, and an empty line + erase
+   * emitted there would wipe whatever content actually lives on it. */
+  if (rows > screen_rows - 1) {
+    rows = screen_rows - 1;
+  }
   olen = 0;
   for (int i = 0; i <= rows && i < MAX_ROWS; i++) {
     const char *a = i <= cur->n ? cur->line[i] : "";
@@ -324,8 +334,11 @@ static void render(int force) {
   }
   /* A forced repaint owns the screen: on the first frame `prev` is empty, so
    * whatever the tty held before -- boot messages, a session that failed to
-   * start -- is below the frame and would never be repainted away. */
-  if (force || cur->n < prev->n) {
+   * start -- is below the frame and would never be repainted away. Skipped
+   * when content already reaches the last row: a real vt clamps an
+   * out-of-range cursor address onto the last row, so the erase would land
+   * back on the row just drawn and wipe it. */
+  if ((force || cur->n < prev->n) && cur->n + 2 <= screen_rows) {
     emit("\033[%d;1H\033[J", cur->n + 2);
   }
   if (olen) {
@@ -340,8 +353,6 @@ static void render(int force) {
 
 /* ---- terminal -------------------------------------------------------------- */
 
-static int screen_rows = 24;
-static int screen_cols = 80;
 static struct termios saved_term;
 static int term_saved;
 
@@ -1155,6 +1166,48 @@ static void tailscale_drain(void) {
 
 static int cores;
 
+static void logo(void) {
+  static const char *lines[] = {
+      "         / \\",
+      "        /- -\\",
+      "      /   |   \\",
+      "     |  <-+->  |",
+      "     | <' | '> |",
+      "     | >. | .< |",
+      "     |  <-+->  |",
+      "      \\   |   /",
+      "        \\- -/",
+      "         \\ /",
+  };
+  size_t width = 0;
+  for (size_t i = 0; i < sizeof lines / sizeof lines[0]; i++) {
+    size_t len = strlen(lines[i]);
+    if (len > width) {
+      width = len;
+    }
+  }
+  int left = screen_cols > (int)width ? (screen_cols - (int)width) / 2 : 0;
+
+  for (size_t i = 0; i < sizeof lines / sizeof lines[0]; i++) {
+    out("%*s" WHT "%s" RST "\n", left, "", lines[i]);
+  }
+  out("\n");
+}
+
+/* Padded with blank lines to the measured screen height rather than tucked
+ * under the logo, so it lands on the panel's last row regardless of how
+ * tall the block above it grows. */
+static void tagline(void) {
+  static const char *tag = "\"break my feelings with your violence...\"";
+  int left =
+      screen_cols > (int)strlen(tag) ? (screen_cols - (int)strlen(tag)) / 2 : 0;
+
+  while (cur->n < screen_rows - 1) {
+    out("\n");
+  }
+  out("%*s" DIM "%s" RST "\n", left, "", tag);
+}
+
 static void build_dashboard(void) {
   char buf[8192];
   char host[128] = "?";
@@ -1390,8 +1443,11 @@ static void build_dashboard(void) {
   out("%s\n\n", ttys);
 
   out(" " BLD "power" RST " screen   " BLD "hold power" RST " menu" DIM
-      "        every %ds" RST "\n",
+      "        every %ds" RST "\n\n",
       cfg.interval);
+
+  logo();
+  tagline();
 }
 
 /* ---- log sources ----------------------------------------------------------- */

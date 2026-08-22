@@ -27,3 +27,16 @@
  [36mTTY   [0m root@tty1 since 02:30   luisnquin@pts/0 since 02:38   
 
  [1mpower[0m screen   [1mhold power[0m menu[2m        every 5s[0m
+
+                                [1;37m         / \[0m
+                                [1;37m        /- -\[0m
+                                [1;37m      /   |   \[0m
+                                [1;37m     |  <-+->  |[0m
+                                [1;37m     | <' | '> |[0m
+                                [1;37m     | >. | .< |[0m
+                                [1;37m     |  <-+->  |[0m
+                                [1;37m      \   |   /[0m
+                                [1;37m        \- -/[0m
+                                [1;37m         \ /[0m
+
+                   [2m"break my feelings with your violence..."[0m
