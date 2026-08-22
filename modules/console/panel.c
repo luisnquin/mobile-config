@@ -1166,37 +1166,50 @@ static void tailscale_drain(void) {
 
 static int cores;
 
+static const char *logo_lines[] = {
+    "         / \\",
+    "        /- -\\",
+    "      /   |   \\",
+    "     |  <-+->  |",
+    "     | <' | '> |",
+    "     | >. | .< |",
+    "     |  <-+->  |",
+    "      \\   |   /",
+    "        \\- -/",
+    "         \\ /",
+};
+#define LOGO_ROWS ((int)(sizeof logo_lines / sizeof logo_lines[0]))
+
+/* flex-style "space-between": the room left between the footer and the
+ * bottom-anchored tagline is split into two equal gaps around the logo,
+ * instead of one line above it and everything else dumped below. */
+static void logo_gap(void) {
+  int room = (screen_rows - 1) - cur->n - LOGO_ROWS;
+  int top = room > 0 ? room / 2 : 0;
+  for (int i = 0; i < top; i++) {
+    out("\n");
+  }
+}
+
 static void logo(void) {
-  static const char *lines[] = {
-      "         / \\",
-      "        /- -\\",
-      "      /   |   \\",
-      "     |  <-+->  |",
-      "     | <' | '> |",
-      "     | >. | .< |",
-      "     |  <-+->  |",
-      "      \\   |   /",
-      "        \\- -/",
-      "         \\ /",
-  };
   size_t width = 0;
-  for (size_t i = 0; i < sizeof lines / sizeof lines[0]; i++) {
-    size_t len = strlen(lines[i]);
+  for (int i = 0; i < LOGO_ROWS; i++) {
+    size_t len = strlen(logo_lines[i]);
     if (len > width) {
       width = len;
     }
   }
   int left = screen_cols > (int)width ? (screen_cols - (int)width) / 2 : 0;
 
-  for (size_t i = 0; i < sizeof lines / sizeof lines[0]; i++) {
-    out("%*s" WHT "%s" RST "\n", left, "", lines[i]);
+  for (int i = 0; i < LOGO_ROWS; i++) {
+    out("%*s" WHT "%s" RST "\n", left, "", logo_lines[i]);
   }
-  out("\n");
 }
 
 /* Padded with blank lines to the measured screen height rather than tucked
  * under the logo, so it lands on the panel's last row regardless of how
- * tall the block above it grows. */
+ * tall the block above it grows -- this is the bottom half of the
+ * space-between split, sized by whatever logo_gap() left over. */
 static void tagline(void) {
   static const char *tag = "\"break my feelings with your violence...\"";
   int left =
@@ -1443,9 +1456,10 @@ static void build_dashboard(void) {
   out("%s\n\n", ttys);
 
   out(" " BLD "power" RST " screen   " BLD "hold power" RST " menu" DIM
-      "        every %ds" RST "\n\n",
+      "        every %ds" RST "\n",
       cfg.interval);
 
+  logo_gap();
   logo();
   tagline();
 }
