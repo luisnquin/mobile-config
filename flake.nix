@@ -70,6 +70,8 @@
     # outputs once.
     toolsFor = system: import ./tools {pkgs = pkgsFor system;};
 
+    consolePreviewFor = system: import ./modules/console/preview.nix {pkgs = pkgsFor system;};
+
     firmwareArtifactsFor = system: let
       pkgs = pkgsFor system;
     in
@@ -228,7 +230,7 @@
     packages = forEachSystem (
       system:
         builtins.foldl' (acc: device: acc // outputsFor system device) (
-          toolsFor system // firmwareArtifactsFor system // kernelArtifactsFor system
+          toolsFor system // consolePreviewFor system // firmwareArtifactsFor system // kernelArtifactsFor system
         ) (
           builtins.attrNames devices
         )
@@ -264,7 +266,7 @@
           # The flake app schema carries its own meta; the derivation's is not
           # consulted, and `nix flake check` warns about every app without one.
           meta = drv.meta or {};
-        }) (toolsFor system)
+        }) (toolsFor system // consolePreviewFor system)
     );
 
     # Cheap enough to run on every change, and it covers the failure that is
