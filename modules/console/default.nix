@@ -65,6 +65,8 @@
     ++ [
       "--interval"
       (toString cfg.interval)
+      "--logo-interval-ms"
+      (toString cfg.logoInterval)
       "--log-lines"
       (toString cfg.logLines)
       "--top-margin"
@@ -143,6 +145,19 @@ in {
       type = lib.types.ints.positive;
       default = 5;
       description = "Seconds between repaints.";
+    };
+
+    logoInterval = lib.mkOption {
+      type = lib.types.ints.unsigned;
+      default = 200;
+      description = ''
+        Milliseconds between logo-only redraws, on a timer independent of
+        `interval`. Only the logo rows repaint on this tick, not the sampled
+        stats, but on embedded hardware a sub-second timer is still a real
+        battery and CPU cost paid forever for a cosmetic animation. Set to 0
+        to disable and fall back to a static logo repainted alongside the
+        stats.
+      '';
     };
 
     logLines = lib.mkOption {

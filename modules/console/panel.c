@@ -48,6 +48,8 @@
 #define RED "\033[31m"
 #define GRN "\033[32m"
 #define YEL "\033[33m"
+#define BLU "\033[34m"
+#define MAG "\033[35m"
 #define CYN "\033[36m"
 #define WHT "\033[1;37m"
 
@@ -76,6 +78,7 @@ static struct {
   const char *subtitle;
   const char *load_note;
   int interval;
+  int logo_interval_ms;
   int log_lines;
   int top_margin;
   int default_brightness;
@@ -99,6 +102,7 @@ static struct {
     .subtitle = "",
     .load_note = "",
     .interval = 5,
+    .logo_interval_ms = 200,
     .log_lines = 3000,
     .top_margin = 5,
     .default_brightness = 200,
@@ -1166,43 +1170,79 @@ static void tailscale_drain(void) {
 
 static int cores;
 
-static const char *logo_lines[] = {
-    "         / \\",
-    "        /- -\\",
-    "      /   |   \\",
-    "     |  <-+->  |",
-    "     | <' | '> |",
-    "     | >. | .< |",
-    "     |  <-+->  |",
-    "      \\   |   /",
-    "        \\- -/",
-    "         \\ /",
-};
-#define LOGO_ROWS ((int)(sizeof logo_lines / sizeof logo_lines[0]))
+#define LOGO_RAMP_START 33 /* '!' */
+#define LOGO_RAMP_LEN 94   /* '!' (33) .. '~' (126) */
+#define LOGO_ROW_BUF (MAX_LINE - 1)
+#define LOGO_GAP 2
 
-/* flex-style "space-between": the room left between the footer and the
- * bottom-anchored tagline is split into two equal gaps around the logo,
- * instead of one line above it and everything else dumped below. */
+/* Advanced once per redraw, whether that redraw came from the stats
+ * interval or the faster --logo-interval-ms tick, so the two cadences
+ * animate the same clock instead of fighting over it. --once never sees
+ * more than the one call that produces frame 0, which is what the golden
+ * fixture pins. */
+static unsigned anim_frame = 0;
+
 static void logo_gap(void) {
-  int room = (screen_rows - 1) - cur->n - LOGO_ROWS;
-  int top = room > 0 ? room / 2 : 0;
-  for (int i = 0; i < top; i++) {
+  for (int i = 0; i < LOGO_GAP; i++) {
     out("\n");
   }
 }
 
-static void logo(void) {
-  size_t width = 0;
-  for (int i = 0; i < LOGO_ROWS; i++) {
-    size_t len = strlen(logo_lines[i]);
-    if (len > width) {
-      width = len;
-    }
+static void logo_row(char *row, int width, int offset) {
+  for (int c = 0; c < width; c++) {
+    int idx = ((c + offset) % LOGO_RAMP_LEN + LOGO_RAMP_LEN) % LOGO_RAMP_LEN;
+    row[c] = (char)(LOGO_RAMP_START + idx);
   }
-  int left = screen_cols > (int)width ? (screen_cols - (int)width) / 2 : 0;
+  row[width] = '\0';
+}
 
-  for (int i = 0; i < LOGO_ROWS; i++) {
-    out("%*s" WHT "%s" RST "\n", left, "", logo_lines[i]);
+/* asciiart.eu's "ASCII Horizon": every printable ASCII character used as a
+ * density ramp, tiled edge to edge and sheared per row so the rows read as
+ * a converging grid. The top half scrolls right in a fire palette, the
+ * bottom half scrolls left in the original cool one, split by a LOGO_GAP
+ * blank rows so the two read as distinct bands rather than one gradient.
+ * Fills whatever room is left above the tagline's own LOGO_GAP, called
+ * once on each side of this. */
+static void logo(void) {
+  unsigned frame = anim_frame++;
+  int width = screen_cols;
+  if (width > LOGO_ROW_BUF) {
+    width = LOGO_ROW_BUF;
+  }
+
+  int avail = (screen_rows - 1) - cur->n - LOGO_GAP;
+  if (avail < 0) {
+    avail = 0;
+  }
+  int split = avail > LOGO_GAP ? avail - LOGO_GAP : 0;
+  int top_rows = split / 2;
+  int bottom_rows = split - top_rows;
+  char row[LOGO_ROW_BUF + 1];
+
+  static const char *fire_bands[5] = {BLD YEL, YEL, BLD RED, RED, DIM RED};
+  static const char *frost_bands[5] = {BLD WHT, BLD CYN, CYN, BLD BLU, DIM BLU};
+
+  for (int r = 0; r < top_rows; r++) {
+    int ad = (top_rows - 1) - r;
+    logo_row(row, width, (int)(frame * 2) + ad * 3);
+
+    int band = top_rows > 1 ? ad * 5 / top_rows : 0;
+    if (band > 4) {
+      band = 4;
+    }
+    out("%s%s" RST "\n", fire_bands[band], row);
+  }
+
+  logo_gap();
+
+  for (int r = 0; r < bottom_rows; r++) {
+    logo_row(row, width, -(int)(frame * 2) + r * 3);
+
+    int band = bottom_rows > 1 ? r * 5 / bottom_rows : 0;
+    if (band > 4) {
+      band = 4;
+    }
+    out("%s%s" RST "\n", frost_bands[band], row);
   }
 }
 
@@ -1221,7 +1261,7 @@ static void tagline(void) {
   out("%*s" DIM "%s" RST "\n", left, "", tag);
 }
 
-static void build_dashboard(void) {
+static void build_dashboard_body(void) {
   char buf[8192];
   char host[128] = "?";
   char kernel[128] = "?";
@@ -1458,9 +1498,21 @@ static void build_dashboard(void) {
   out(" " BLD "power" RST " screen   " BLD "hold power" RST " menu" DIM
       "        every %ds" RST "\n",
       cfg.interval);
+}
 
+/* Everything above the logo redrawn fresh, on every stats interval. Cached
+ * here so a logo-only tick (see repaint_logo_only()) can redraw just the
+ * animation without touching /proc, /sys or the bus again. */
+static struct screen body_cache;
+static int body_cache_valid = 0;
+
+static void build_dashboard(void) {
+  build_dashboard_body();
+  body_cache = *cur;
+  body_cache_valid = 1;
   logo_gap();
   logo();
+  logo_gap();
   tagline();
 }
 
@@ -1844,6 +1896,24 @@ static void repaint(int force) {
   render(force);
 }
 
+/* The --logo-interval-ms tick. Replays the last stats sample from
+ * body_cache instead of rereading /proc, /sys and the bus, so animating
+ * faster than --interval costs a handful of line rewrites rather than a
+ * full resample. Falls back to a full repaint the first time it fires,
+ * before any interval tick has populated the cache. */
+static void repaint_logo_only(void) {
+  if (!body_cache_valid) {
+    repaint(0);
+    return;
+  }
+  *cur = body_cache;
+  logo_gap();
+  logo();
+  logo_gap();
+  tagline();
+  render(0);
+}
+
 /* ---- key handling ---------------------------------------------------------- */
 
 enum action { A_NONE, A_UP, A_DOWN, A_SELECT, A_MENU, A_QUIT, A_OTHER };
@@ -2191,7 +2261,8 @@ static void add_service(const char *spec) {
 
 enum {
   OPT_ROOT = 1000, OPT_BACKLIGHT, OPT_STATE_DIR, OPT_KEYS, OPT_KEYS_RAW,
-  OPT_TAILSCALE, OPT_SUBTITLE, OPT_LOAD_NOTE, OPT_INTERVAL, OPT_LOG_LINES,
+  OPT_TAILSCALE, OPT_SUBTITLE, OPT_LOAD_NOTE, OPT_INTERVAL,
+  OPT_LOGO_INTERVAL_MS, OPT_LOG_LINES,
   OPT_TOP_MARGIN, OPT_BRIGHTNESS, OPT_HOLD_MS, OPT_REPEAT_MS, OPT_POWER,
   OPT_VOLUP, OPT_VOLDOWN, OPT_SERVICE, OPT_ONCE, OPT_NOW, OPT_SOCKET,
 };
@@ -2207,6 +2278,7 @@ static const struct option long_opts[] = {
     {"subtitle", required_argument, NULL, OPT_SUBTITLE},
     {"load-note", required_argument, NULL, OPT_LOAD_NOTE},
     {"interval", required_argument, NULL, OPT_INTERVAL},
+    {"logo-interval-ms", required_argument, NULL, OPT_LOGO_INTERVAL_MS},
     {"log-lines", required_argument, NULL, OPT_LOG_LINES},
     {"top-margin", required_argument, NULL, OPT_TOP_MARGIN},
     {"default-brightness", required_argument, NULL, OPT_BRIGHTNESS},
@@ -2235,6 +2307,7 @@ static int parse_args(int argc, char **argv) {
       case OPT_SUBTITLE: cfg.subtitle = optarg; break;
       case OPT_LOAD_NOTE: cfg.load_note = optarg; break;
       case OPT_INTERVAL: cfg.interval = atoi(optarg); break;
+      case OPT_LOGO_INTERVAL_MS: cfg.logo_interval_ms = atoi(optarg); break;
       case OPT_LOG_LINES: cfg.log_lines = atoi(optarg); break;
       case OPT_TOP_MARGIN: cfg.top_margin = atoi(optarg); break;
       case OPT_BRIGHTNESS: cfg.default_brightness = atoi(optarg); break;
@@ -2251,6 +2324,9 @@ static int parse_args(int argc, char **argv) {
   }
   if (cfg.interval < 1) {
     cfg.interval = 1;
+  }
+  if (cfg.logo_interval_ms < 0) {
+    cfg.logo_interval_ms = 0;
   }
   return 0;
 }
@@ -2442,8 +2518,23 @@ int main(int argc, char **argv) {
                            .it_value = {.tv_sec = cfg.interval}};
   timerfd_settime(tfd, 0, &its, NULL);
 
+  int logo_tfd = -1;
+  if (cfg.logo_interval_ms > 0) {
+    logo_tfd = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC);
+    long ms = cfg.logo_interval_ms;
+    struct itimerspec logo_its = {
+        .it_interval = {.tv_sec = ms / 1000, .tv_nsec = (ms % 1000) * 1000000L},
+        .it_value = {.tv_sec = ms / 1000, .tv_nsec = (ms % 1000) * 1000000L},
+    };
+    timerfd_settime(logo_tfd, 0, &logo_its, NULL);
+  }
+
   struct epoll_event ev = {.events = EPOLLIN, .data.fd = tfd};
   epoll_ctl(ep, EPOLL_CTL_ADD, tfd, &ev);
+  if (logo_tfd >= 0) {
+    ev.data.fd = logo_tfd;
+    epoll_ctl(ep, EPOLL_CTL_ADD, logo_tfd, &ev);
+  }
   ev.data.fd = STDIN_FILENO;
   epoll_ctl(ep, EPOLL_CTL_ADD, STDIN_FILENO, &ev);
   if (keys_fd >= 0) {
@@ -2531,6 +2622,13 @@ int main(int argc, char **argv) {
         epoll_ctl(ep, EPOLL_CTL_DEL, ts_fd, NULL);
         registered_ts = -1;
         tailscale_drain();
+      } else if (fd == logo_tfd) {
+        uint64_t ticks;
+        ssize_t r = read(logo_tfd, &ticks, sizeof ticks);
+        (void)r;
+        if (view == V_DASH) {
+          repaint_logo_only();
+        }
       }
     }
   }
