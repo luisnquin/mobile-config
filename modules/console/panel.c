@@ -1219,8 +1219,13 @@ static void logo(void) {
   int bottom_rows = split - top_rows;
   char row[LOGO_ROW_BUF + 1];
 
-  static const char *fire_bands[5] = {BLD YEL, YEL, BLD RED, RED, DIM RED};
-  static const char *frost_bands[5] = {BLD WHT, BLD CYN, CYN, BLD BLU, DIM BLU};
+  /* Bold/dim modifiers on a single hue render too weakly on real consoles
+   * and terminal themes to read as depth -- confirmed on both dandelion's
+   * fbcon and an xterm-256color session, where DIM RED/BLD RED/RED all
+   * looked like one flat block. Hue changes are the reliable signal, so
+   * each band steps to a genuinely different color instead. */
+  static const char *fire_bands[5] = {BLD YEL, YEL, RED, BLD RED, MAG};
+  static const char *frost_bands[5] = {WHT, BLD CYN, CYN, BLD BLU, BLU};
 
   for (int r = 0; r < top_rows; r++) {
     int ad = (top_rows - 1) - r;
