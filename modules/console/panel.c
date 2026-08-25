@@ -1789,7 +1789,7 @@ static enum view pager_parent = V_MENU;
 
 static const char *const menu_items[] = {"backlight", "boot log", "errors",
                                          "kernel logs", "units", "network",
-                                         "back"};
+                                         "reboot", "back"};
 #define MENU_N ((int)(sizeof menu_items / sizeof *menu_items))
 
 static void build_menu(void) {
@@ -1923,6 +1923,17 @@ static void repaint_logo_only(void) {
 
 enum action { A_NONE, A_UP, A_DOWN, A_SELECT, A_MENU, A_QUIT, A_OTHER };
 
+static void request_reboot(void) {
+  if (cfg.root[0] || !bus) {
+    return;
+  }
+  sd_bus_error err = SD_BUS_ERROR_NULL;
+  sd_bus_call_method(bus, "org.freedesktop.login1", "/org/freedesktop/login1",
+                     "org.freedesktop.login1.Manager", "Reboot", &err, NULL,
+                     "b", 0);
+  sd_bus_error_free(&err);
+}
+
 static void menu_activate(void) {
   const char *item = menu_items[menu_sel];
   if (!strcmp(item, "backlight")) {
@@ -1937,6 +1948,8 @@ static void menu_activate(void) {
     pager_open(load_units, V_MENU, 0);
   } else if (!strcmp(item, "network")) {
     pager_open(load_network, V_MENU, 0);
+  } else if (!strcmp(item, "reboot")) {
+    request_reboot();
   } else if (!strcmp(item, "back")) {
     view = V_DASH;
   }

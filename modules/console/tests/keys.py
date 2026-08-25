@@ -204,7 +204,7 @@ def main():
               after not in (before, "backlight"), f"{before!r} -> {after!r}")
 
         menu = ["backlight", "boot log", "errors", "kernel logs", "units",
-                "network", "back"]
+                "network", "reboot", "back"]
         step_to(rig, "back", menu)
         text = rig.press(KEY_POWER, 0.8)
         check("power on 'back' closes the menu", "THOMPSON" in text)
@@ -219,6 +219,12 @@ def main():
 
         text = rig.press(KEY_POWER, 0.8)
         check("power leaves the pager for the menu", "MENU" in text)
+
+        # No system bus under the fixture root, so this is a no-op rather
+        # than an actual reboot -- selecting it should just leave the menu up.
+        step_to(rig, "reboot", menu)
+        text = rig.press(KEY_POWER, 0.8)
+        check("selecting reboot is a no-op without a bus", "MENU" in text)
 
         # With no panel attached the power key is just the on/off switch.
         rig.panel.send_signal(signal.SIGTERM)
