@@ -25,6 +25,7 @@ EV_KEY, EV_SYN = 0x01, 0x00
 KEY_POWER, KEY_VOLUMEUP, KEY_VOLUMEDOWN = 116, 115, 114
 HOLD_MS, REPEAT_MS = 200, 100
 BACKLIGHT = "/sys/class/leds/lcd-backlight"
+TORCH = "/sys/class/leds/torch-light0"
 
 failures = []
 
@@ -97,6 +98,10 @@ class Rig:
 
     def brightness(self):
         with open(self.path(BACKLIGHT + "/brightness")) as f:
+            return int(f.read().strip() or 0)
+
+    def torch(self):
+        with open(self.path(TORCH + "/brightness")) as f:
             return int(f.read().strip() or 0)
 
     def wait_for_socket(self, timeout=5.0):
@@ -184,7 +189,7 @@ def main():
               f"selected={selected(text)!r}")
 
         text = rig.press(KEY_VOLUMEDOWN)
-        check("volume down steps forward", selected(text) == "boot log",
+        check("volume down steps forward", selected(text) == "torch",
               f"selected={selected(text)!r}")
 
         text = rig.press(KEY_VOLUMEUP)
@@ -203,8 +208,8 @@ def main():
         check("holding volume repeats past one step",
               after not in (before, "backlight"), f"{before!r} -> {after!r}")
 
-        menu = ["backlight", "boot log", "errors", "kernel logs", "units",
-                "network", "reboot", "back"]
+        menu = ["backlight", "torch", "boot log", "errors", "kernel logs",
+                "units", "network", "reboot", "back"]
         step_to(rig, "back", menu)
         text = rig.press(KEY_POWER, 0.8)
         check("power on 'back' closes the menu", "THOMPSON" in text)
@@ -219,6 +224,14 @@ def main():
 
         text = rig.press(KEY_POWER, 0.8)
         check("power leaves the pager for the menu", "MENU" in text)
+
+        step_to(rig, "torch", menu)
+        rig.press(KEY_POWER, 0.4)
+        check("selecting torch turns it on", rig.torch() > 0,
+              f"torch={rig.torch()}")
+        rig.press(KEY_POWER, 0.4)
+        check("selecting torch again turns it off", rig.torch() == 0,
+              f"torch={rig.torch()}")
 
         # No system bus under the fixture root, so this is a no-op rather
         # than an actual reboot -- selecting it should just leave the menu up.

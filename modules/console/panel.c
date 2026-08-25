@@ -71,6 +71,7 @@ struct service {
 static struct {
   const char *root;
   const char *backlight;
+  const char *torch;
   const char *state_dir;
   const char *keys_dev;
   const char *socket_path;
@@ -95,6 +96,7 @@ static struct {
 } cfg = {
     .root = "",
     .backlight = "/sys/class/leds/lcd-backlight",
+    .torch = "/sys/class/leds/torch-light0",
     .state_dir = "/run/display",
     .keys_dev = "",
     .socket_path = "",
@@ -449,6 +451,22 @@ static void display_toggle(void) {
   } else {
     display_on();
   }
+}
+
+/* Confirmed live on dandelion: torch-light0 is the standard v4l2-flash
+ * torch channel (steady, low-current), separate from "flashlight" which
+ * is the camera's short high-power strobe. brightness=1 already drives it
+ * to a visible level, so the toggle doesn't need a dimming scale. */
+static long torch_level(void) {
+  char p[PATH_MAX];
+  snprintf(p, sizeof p, "%s/brightness", cfg.torch);
+  return (long)read_ll(rp(p), 0);
+}
+
+static void torch_toggle(void) {
+  char p[PATH_MAX];
+  snprintf(p, sizeof p, "%s/brightness", cfg.torch);
+  write_num(rp(p), torch_level() > 0 ? 0 : 1);
 }
 
 /* ---- systemd bus ----------------------------------------------------------- */
@@ -1787,9 +1805,9 @@ static int pager_top;
 static void (*pager_reload)(struct textbuf *);
 static enum view pager_parent = V_MENU;
 
-static const char *const menu_items[] = {"backlight", "boot log", "errors",
-                                         "kernel logs", "units", "network",
-                                         "reboot", "back"};
+static const char *const menu_items[] = {"backlight", "torch", "boot log",
+                                         "errors", "kernel logs", "units",
+                                         "network", "reboot", "back"};
 #define MENU_N ((int)(sizeof menu_items / sizeof *menu_items))
 
 static void build_menu(void) {
@@ -1804,6 +1822,8 @@ static void build_menu(void) {
     if (!strcmp(menu_items[i], "backlight")) {
       out(DIM "%s, %ld of %ld" RST, level > 0 ? "on" : "off", level,
           backlight_max);
+    } else if (!strcmp(menu_items[i], "torch")) {
+      out(DIM "%s" RST, torch_level() > 0 ? "on" : "off");
     }
     out("\n");
   }
@@ -1938,6 +1958,8 @@ static void menu_activate(void) {
   const char *item = menu_items[menu_sel];
   if (!strcmp(item, "backlight")) {
     display_toggle();
+  } else if (!strcmp(item, "torch")) {
+    torch_toggle();
   } else if (!strcmp(item, "boot log")) {
     pager_open(load_boot_log, V_MENU, 0);
   } else if (!strcmp(item, "errors")) {
@@ -2278,7 +2300,8 @@ static void add_service(const char *spec) {
 }
 
 enum {
-  OPT_ROOT = 1000, OPT_BACKLIGHT, OPT_STATE_DIR, OPT_KEYS, OPT_KEYS_RAW,
+  OPT_ROOT = 1000, OPT_BACKLIGHT, OPT_TORCH, OPT_STATE_DIR, OPT_KEYS,
+  OPT_KEYS_RAW,
   OPT_TAILSCALE, OPT_SUBTITLE, OPT_LOAD_NOTE, OPT_INTERVAL,
   OPT_LOGO_INTERVAL_MS, OPT_LOG_LINES,
   OPT_TOP_MARGIN, OPT_BRIGHTNESS, OPT_HOLD_MS, OPT_REPEAT_MS, OPT_POWER,
@@ -2288,6 +2311,7 @@ enum {
 static const struct option long_opts[] = {
     {"root", required_argument, NULL, OPT_ROOT},
     {"backlight", required_argument, NULL, OPT_BACKLIGHT},
+    {"torch", required_argument, NULL, OPT_TORCH},
     {"state-dir", required_argument, NULL, OPT_STATE_DIR},
     {"keys", required_argument, NULL, OPT_KEYS},
     {"keys-raw", no_argument, NULL, OPT_KEYS_RAW},
@@ -2317,6 +2341,7 @@ static int parse_args(int argc, char **argv) {
     switch (c) {
       case OPT_ROOT: cfg.root = optarg; break;
       case OPT_BACKLIGHT: cfg.backlight = optarg; break;
+      case OPT_TORCH: cfg.torch = optarg; break;
       case OPT_STATE_DIR: cfg.state_dir = optarg; break;
       case OPT_KEYS: cfg.keys_dev = optarg; break;
       case OPT_KEYS_RAW: cfg.keys_raw = 1; break;
